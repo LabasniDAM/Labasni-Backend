@@ -1,3 +1,4 @@
+// src/app.module.ts
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AuthModule } from './auth/auth.module';
@@ -16,18 +17,6 @@ import Joi from 'joi';
 
 @Module({
   imports: [
-    MongooseModule.forRoot(
-      process.env.MONGODB_URI ?? 'mongodb://127.0.0.1:27017/labasni',
-    ),
-    
-    UserModule,
-    AuthModule,
-    ClothesModule,
-    OutfitsModule,
-    EventsModule,
-    StoreModule,
-    SuitcasesModule,
-    AvatarsModule,
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
@@ -37,8 +26,34 @@ import Joi from 'joi';
         JWT_SECRET: Joi.string().required(),
         JWT_EXPIRES_IN: Joi.string().default('1h'),
         JWT_REFRESH_EXPIRES_IN: Joi.string().default('7d'),
+
+        // EMAIL
+        EMAIL_HOST: Joi.string().required(),
+        EMAIL_PORT: Joi.number().default(587),
+        EMAIL_USER: Joi.string().email().required(),
+        EMAIL_PASS: Joi.string().required(),
+        EMAIL_FROM: Joi.string().required(),
+
+        // PIN
+        PIN_EXPIRATION_MINUTES: Joi.number().default(10),
       }),
+      validationOptions: {
+        abortEarly: false,
+      },
     }),
+
+    MongooseModule.forRoot(
+      process.env.MONGO_URI ?? 'mongodb://127.0.0.1:27017/labasni',
+    ),
+
+    UserModule,
+    AuthModule,
+    ClothesModule,
+    OutfitsModule,
+    EventsModule,
+    StoreModule,
+    SuitcasesModule,
+    AvatarsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

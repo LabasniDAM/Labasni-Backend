@@ -1,8 +1,7 @@
-import { ValidationPipe } from '@nestjs/common';
-import { NestFactory, Reflector } from '@nestjs/core';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
+import { ValidationPipe } from '@nestjs/common';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -17,9 +16,7 @@ async function bootstrap() {
 
   const config = new DocumentBuilder()
     .setTitle('Labasni API')
-    .setDescription(
-      'Comprehensive API documentation for Labasni, covering user authentication, registration, profile management, and OAuth integrations (Google & Apple).',
-    )
+    .setDescription('API pour Labasni - Auth, IA, Style')
     .setVersion('1.0')
     .addTag('Auth')
     .addBearerAuth()
@@ -28,9 +25,6 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('docs', app, document);
 
-  
-
-await app.listen(process.env.PORT ?? 3000);
+  await app.listen(process.env.PORT ?? 3000);
 }
-
 bootstrap();

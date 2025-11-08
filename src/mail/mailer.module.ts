@@ -1,34 +1,31 @@
+// src/mail/mailer.module.ts
 import { Module } from '@nestjs/common';
 import { MailerModule } from '@nestjs-modules/mailer';
 import { join } from 'path';
-
-function getEnv(key: string, fallback?: string): string {
-  const value = process.env[key];
-  if (!value && !fallback) {
-    throw new Error(`Environment variable ${key} is missing!`);
-  }
-  return value || fallback!;
-}
+import { ConfigService } from '@nestjs/config';
 
 @Module({
   imports: [
-    MailerModule.forRoot({
-      transport: {
-        host: getEnv('EMAIL_HOST', 'smtp.gmail.com'),
-        port: parseInt(getEnv('EMAIL_PORT', '587'), 10),
-        secure: false,
-        auth: {
-          user: getEnv('EMAIL_USER'),
-          pass: getEnv('EMAIL_PASS'),
+    MailerModule.forRootAsync({
+      useFactory: (config: ConfigService) => ({
+        transport: {
+          host: config.get('EMAIL_HOST'),
+          port: config.get('EMAIL_PORT'),
+          secure: false,
+          auth: {
+            user: config.get('EMAIL_USER'),
+            pass: config.get('EMAIL_PASS'),
+          },
         },
-      },
-      defaults: {
-        from: getEnv('EMAIL_FROM', '"Labasni" <no-reply@labasni.com>'),
-      },
-      template: {
-        dir: join(process.cwd(), 'dist', 'mailer', 'templates'),
-        options: { strict: true },
-      },
+        defaults: {
+          from: config.get('EMAIL_FROM'),
+        },
+        template: {
+          dir: join(process.cwd(), 'dist', 'mailer', 'templates'),
+          options: { strict: true },
+        },
+      }),
+      inject: [ConfigService],
     }),
   ],
   exports: [MailerModule],
