@@ -73,6 +73,3 @@ Développé avec **NestJS**, **MongoDB**, **JWT**, et validation stricte.
 git clone https://github.com/LabasniDAM/Labasni-Backend.git
 cd Labasni-Backend
 
-2. **Installer les dépendances :
-```bash
-npm install
