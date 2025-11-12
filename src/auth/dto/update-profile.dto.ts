@@ -28,19 +28,13 @@ export class UpdateProfileDto {
   readonly phoneNumber?: string;
 
   @ApiPropertyOptional({
-    isArray: true,
-    type: String,
-    example: ['hiking', 'music'],
+  isArray: true,    type: String,
+  example: ['casual', 'chic'],
   })
   @IsOptional()
+  @IsArray()
   @IsString({ each: true })
-  @Transform(({ value }) => {
-    if (typeof value === 'string') {
-      return value.split(',').map(v => v.trim());
-    }
-    return value;
-  })
-  readonly preferences?: string[];
+  readonly preferences?: string[]; 
 
 
   @ApiPropertyOptional({

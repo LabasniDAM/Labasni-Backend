@@ -406,41 +406,53 @@ export class AuthService {
 
   // --- UPDATE PROFILE ---
   // --- MISE À JOUR TEXTE SEULEMENT ---
-async updateProfileText(userId: string, updateDto: UpdateProfileDto): Promise<SafeUser> {
-  const updates: any = {};
+  async updateProfileText(userId: string, updateDto: UpdateProfileDto): Promise<SafeUser> {
+    const updates: any = {};
 
-  if (updateDto.fullName !== undefined) updates.fullName = updateDto.fullName?.trim();
-  if (updateDto.phoneNumber !== undefined) updates.phoneNumber = updateDto.phoneNumber?.trim();
-  if (updateDto.gender !== undefined) updates.gender = updateDto.gender;
-  if (updateDto.password) updates.password = await bcrypt.hash(updateDto.password, 10);
+    if (updateDto.fullName !== undefined) {
+      updates.fullName = updateDto.fullName?.trim();
+    }
+    if (updateDto.phoneNumber !== undefined) {
+      updates.phoneNumber = updateDto.phoneNumber?.trim();
+    }
+    if (updateDto.gender !== undefined) {
+      updates.gender = updateDto.gender;
+    }
+    if (updateDto.password) {
+      updates.password = await bcrypt.hash(updateDto.password, 10);
+    }
 
-  if (Object.keys(updates).length === 0) {
-    const user = await this.userService.findById(userId);
-    if (!user) throw new NotFoundException('User not found');
-    return user;
+    if (updateDto.preferences !== undefined) {
+      updates.preferences = updateDto.preferences;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      const user = await this.userService.findById(userId);
+      if (!user) throw new NotFoundException('User not found');
+      return user;
+    }
+
+    const updatedUser = await this.userService.updateById(userId, updates);
+    if (!updatedUser) throw new NotFoundException('User not found');
+    return updatedUser;
   }
 
-  const updatedUser = await this.userService.updateById(userId, updates);
-  if (!updatedUser) throw new NotFoundException('User not found');
-  return updatedUser;
-}
+  // --- MISE À JOUR PHOTO SEULEMENT ---
+  async updateProfilePhoto(userId: string, image: Express.Multer.File): Promise<SafeUser> {
+    let profilePicture: string | undefined;
 
-// --- MISE À JOUR PHOTO SEULEMENT ---
-async updateProfilePhoto(userId: string, image: Express.Multer.File): Promise<SafeUser> {
-  let profilePicture: string | undefined;
+    try {
+      const result = await this.cloudinaryService.uploadImage(image);
+      profilePicture = result.secure_url;
+    } catch (error) {
+      console.error('Échec upload:', error);
+      throw new InternalServerErrorException('Échec upload image');
+    }
 
-  try {
-    const result = await this.cloudinaryService.uploadImage(image);
-    profilePicture = result.secure_url;
-  } catch (error) {
-    console.error('Échec upload:', error);
-    throw new InternalServerErrorException('Échec upload image');
+    const updatedUser = await this.userService.updateById(userId, { profilePicture });
+    if (!updatedUser) throw new NotFoundException('User not found');
+    return updatedUser;
   }
-
-  const updatedUser = await this.userService.updateById(userId, { profilePicture });
-  if (!updatedUser) throw new NotFoundException('User not found');
-  return updatedUser;
-}
 
   // --- DELETE PROFILE ---
   async deleteProfile(userId: string): Promise<void> {
