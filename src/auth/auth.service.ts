@@ -121,7 +121,7 @@ export class AuthService {
       preferences,
     };
 
-    const tempToken = await this.jwtService.signAsync(tempPayload, { expiresIn: '10m' });
+    const tempToken = await this.jwtService.signAsync(tempPayload, { expiresIn: '7d' });
 
     const emailSubject = 'Votre code Labasni';
     const emailText = [
