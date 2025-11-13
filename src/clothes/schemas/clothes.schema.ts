@@ -12,8 +12,8 @@ export class Clothes {
   imageURL: string;
 
   // Tableau de catégories (haut, bas, pantalon, chaussures, etc.)
-  @Prop({ type: [String], required: true })
-  category: string[];
+  @Prop({  required: true })
+  category: string;
 
   // Saison
   @Prop()

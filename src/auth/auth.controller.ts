@@ -116,6 +116,9 @@ async updateProfilePhoto(
     await this.authService.deleteProfile(req.user.id);
     return { message: 'User deleted successfully' };
   }
+    // --- Delete Profile Photo ---
+
+  
 
   // --- Google Auth ---
   @Post('google')

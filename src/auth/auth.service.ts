@@ -1,10 +1,12 @@
 import {
   BadRequestException,
   ConflictException,
+  Delete,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
   UnauthorizedException,
+  UseGuards,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { HttpService } from '@nestjs/axios'; 
@@ -30,6 +32,8 @@ import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { TwilioService } from './twilio.service';
 import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
+import { ApiBearerAuth, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
 interface JwtPayload {
   sub: string;
@@ -587,4 +591,10 @@ async appleAuth(dto: AppleAuthDto): Promise<AuthResponse> {
     if (!user) throw new UnauthorizedException('Échec de l’authentification Google');
     return user;
   }
+
+  // --- DELETE PROFILE PHOTO ---
+  
+
+
+  
 }
