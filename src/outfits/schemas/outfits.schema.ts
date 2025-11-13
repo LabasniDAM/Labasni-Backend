@@ -5,6 +5,7 @@ export type OutfitDocument = Outfit & Document;
 
 @Schema({ timestamps: true })
 export class Outfit {
+  // Plus besoin de userId dans le DTO → automatique via JWT
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   userId: Types.ObjectId;
 
@@ -12,13 +13,13 @@ export class Outfit {
   clothesIds: Types.ObjectId[];
 
   @Prop()
-  eventType: string;
+  eventType?: string;
 
   @Prop()
-  weatherType: string;
+  weatherType?: string;
 
   @Prop({ enum: ['accepted', 'rejected', 'pending'], default: 'pending' })
-  status: string;
+  status: 'accepted' | 'rejected' | 'pending';
 }
 
 export const OutfitSchema = SchemaFactory.createForClass(Outfit);

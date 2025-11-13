@@ -11,11 +11,11 @@ export class Store {
   @Prop({ type: Types.ObjectId, ref: 'Clothes', required: true })
   clothesId: Types.ObjectId;
 
-  @Prop({ required: true })
+  @Prop({ required: true, min: 0 })
   price: number;
 
   @Prop({ enum: ['available', 'sold'], default: 'available' })
-  status: string;
+  status: 'available' | 'sold';
 }
 
 export const StoreSchema = SchemaFactory.createForClass(Store);

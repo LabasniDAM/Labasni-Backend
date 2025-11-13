@@ -6,14 +6,16 @@ import {
   Patch,
   Param,
   Delete,
+  HttpCode,
+  HttpStatus,
   UseGuards,
 } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
   ApiResponse,
-  ApiParam,
   ApiBody,
+  ApiParam,
   ApiBearerAuth,
 } from '@nestjs/swagger';
 import { OutfitsService } from './outfits.service';
@@ -21,6 +23,7 @@ import { CreateOutfitDto } from './dto/create-outfit.dto';
 import { UpdateOutfitDto } from './dto/update-outfit.dto';
 import { Outfit } from './schemas/outfits.schema';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
+import { GetUser } from 'src/common/decorators/get-user.decorator';
 
 @ApiTags('Outfits')
 @ApiBearerAuth()
@@ -29,55 +32,66 @@ import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
 export class OutfitsController {
   constructor(private readonly outfitsService: OutfitsService) {}
 
-  // ------------------ CREATE ------------------
+  // CREATE
   @Post()
-  @ApiOperation({ summary: 'Create a new outfit' })
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Create a new outfit (user from JWT)' })
   @ApiBody({ type: CreateOutfitDto })
-  @ApiResponse({ status: 201, description: 'Outfit successfully created', type: Outfit })
-  @ApiResponse({ status: 400, description: 'Invalid input data' })
-  async create(@Body() createOutfitDto: CreateOutfitDto): Promise<Outfit> {
-    return this.outfitsService.create(createOutfitDto);
+  async create(@Body() dto: CreateOutfitDto, @GetUser() user: any): Promise<Outfit> {
+    return this.outfitsService.create(dto, user.id);
   }
 
-  // ------------------ FIND ALL ------------------
+  // GET ALL (admin ou global)
   @Get()
-  @ApiOperation({ summary: 'Retrieve all outfits' })
-  @ApiResponse({ status: 200, description: 'List of all outfits', type: [Outfit] })
+  @ApiOperation({ summary: 'Retrieve all outfits (admin)' })
   async findAll(): Promise<Outfit[]> {
     return this.outfitsService.findAll();
   }
 
-  // ------------------ FIND ONE ------------------
+  // GET MY OUTFITS
+  @Get('my')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Récupérer mes outfits' })
+  async findMyOutfits(@GetUser() user: any): Promise<Outfit[]> {
+    return this.outfitsService.findByUserId(user.id);
+  }
+
+  // GET ONE
   @Get(':id')
   @ApiOperation({ summary: 'Retrieve a specific outfit by ID' })
   @ApiParam({ name: 'id', description: 'The ID of the outfit' })
-  @ApiResponse({ status: 200, description: 'Outfit found', type: Outfit })
-  @ApiResponse({ status: 404, description: 'Outfit not found' })
   async findOne(@Param('id') id: string): Promise<Outfit> {
     return this.outfitsService.findOne(id);
   }
 
-  // ------------------ UPDATE ------------------
+  // UPDATE
   @Patch(':id')
-  @ApiOperation({ summary: 'Update an existing outfit by ID' })
-  @ApiParam({ name: 'id', description: 'The ID of the outfit to update' })
+  @ApiOperation({ summary: 'Update an outfit by ID' })
   @ApiBody({ type: UpdateOutfitDto })
-  @ApiResponse({ status: 200, description: 'Outfit successfully updated', type: Outfit })
-  @ApiResponse({ status: 404, description: 'Outfit not found' })
   async update(
     @Param('id') id: string,
-    @Body() updateOutfitDto: UpdateOutfitDto,
+    @Body() dto: UpdateOutfitDto,
+    @GetUser() user: any,
   ): Promise<Outfit> {
-    return this.outfitsService.update(id, updateOutfitDto);
+    return this.outfitsService.update(id, dto, user.id);
   }
 
-  // ------------------ DELETE ------------------
+  // DELETE
   @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete an outfit by ID' })
-  @ApiParam({ name: 'id', description: 'The ID of the outfit to delete' })
-  @ApiResponse({ status: 200, description: 'Outfit successfully deleted', type: Outfit })
-  @ApiResponse({ status: 404, description: 'Outfit not found' })
-  async remove(@Param('id') id: string): Promise<Outfit> {
-    return this.outfitsService.remove(id);
+  async remove(@Param('id') id: string, @GetUser() user: any): Promise<void> {
+    await this.outfitsService.remove(id, user.id);
   }
+
+  // Randomly generated outfit
+
+@Post('generate')
+@HttpCode(HttpStatus.CREATED)
+@ApiOperation({ summary: 'Générer un outfit aléatoire avec 3 vêtements de l\'utilisateur' })
+@ApiResponse({ status: 201, description: 'Outfit généré avec succès', type: Outfit })
+@ApiResponse({ status: 400, description: 'Pas assez de vêtements (min 3)' })
+async generateRandomOutfit(@GetUser() user: any): Promise<Outfit> {
+  return this.outfitsService.generateRandom(user.id);
+}
 }

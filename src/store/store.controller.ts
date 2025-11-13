@@ -1,10 +1,29 @@
-import { Controller, Get, Post, Body, Param, Delete, Put, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Delete,
+  Patch,
+  HttpCode,
+  HttpStatus,
+  UseGuards,
+} from '@nestjs/common';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiParam,
+  ApiBody,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
 import { StoreService } from './store.service';
 import { CreateStoreDto } from './dto/create-store.dto';
 import { UpdateStoreDto } from './dto/update-store.dto';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBearerAuth } from '@nestjs/swagger';
 import { Store } from './schemas/store.schema';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
+import { GetUser } from 'src/common/decorators/get-user.decorator';
 
 @ApiTags('Store')
 @ApiBearerAuth()
@@ -13,44 +32,54 @@ import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
 export class StoreController {
   constructor(private readonly storeService: StoreService) {}
 
+  // CREATE
   @Post()
-  @ApiOperation({ summary: 'Create a new store item' })
-  @ApiResponse({ status: 201, description: 'Store item created successfully', type: Store })
-  create(@Body() createStoreDto: CreateStoreDto) {
-    return this.storeService.create(createStoreDto);
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Mettre en vente un vêtement (user auto)' })
+  @ApiBody({ type: CreateStoreDto })
+  async create(@Body() dto: CreateStoreDto, @GetUser() user: any): Promise<Store> {
+    return this.storeService.create(dto, user.id);
   }
 
+  // GET ALL (admin)
   @Get()
-  @ApiOperation({ summary: 'Get all store items' })
-  @ApiResponse({ status: 200, description: 'List of all store items', type: [Store] })
-  findAll() {
+  @ApiOperation({ summary: 'Tous les articles en vente' })
+  async findAll(): Promise<Store[]> {
     return this.storeService.findAll();
   }
 
+  // GET MY STORE ITEMS
+  @Get('my')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Mes articles en vente' })
+  async findMyStore(@GetUser() user: any): Promise<Store[]> {
+    return this.storeService.findByUserId(user.id);
+  }
+
+  // GET ONE
   @Get(':id')
-  @ApiOperation({ summary: 'Get a specific store item by ID' })
-  @ApiParam({ name: 'id', description: 'The store item ID' })
-  @ApiResponse({ status: 200, description: 'Store item found', type: Store })
-  @ApiResponse({ status: 404, description: 'Store item not found' })
-  findOne(@Param('id') id: string) {
+  @ApiOperation({ summary: 'Détail d\'un article' })
+  @ApiParam({ name: 'id', description: 'ID du Store item' })
+  async findOne(@Param('id') id: string): Promise<Store> {
     return this.storeService.findOne(id);
   }
 
-  @Put(':id')
-  @ApiOperation({ summary: 'Update a store item by ID' })
-  @ApiParam({ name: 'id', description: 'The store item ID' })
-  @ApiResponse({ status: 200, description: 'Store item updated successfully', type: Store })
-  @ApiResponse({ status: 404, description: 'Store item not found' })
-  update(@Param('id') id: string, @Body() updateStoreDto: UpdateStoreDto) {
-    return this.storeService.update(id, updateStoreDto);
+  // UPDATE
+  @Patch(':id')
+  @ApiOperation({ summary: 'Mettre à jour un article' })
+  async update(
+    @Param('id') id: string,
+    @Body() dto: UpdateStoreDto,
+    @GetUser() user: any,
+  ): Promise<Store> {
+    return this.storeService.update(id, dto, user.id);
   }
 
+  // DELETE
   @Delete(':id')
-  @ApiOperation({ summary: 'Delete a store item by ID' })
-  @ApiParam({ name: 'id', description: 'The store item ID' })
-  @ApiResponse({ status: 200, description: 'Store item deleted successfully' })
-  @ApiResponse({ status: 404, description: 'Store item not found' })
-  remove(@Param('id') id: string) {
-    return this.storeService.remove(id);
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Supprimer un article' })
+  async remove(@Param('id') id: string, @GetUser() user: any): Promise<void> {
+    await this.storeService.remove(id, user.id);
   }
 }

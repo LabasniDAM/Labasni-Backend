@@ -1,6 +1,7 @@
 import {
   Injectable,
   NotFoundException,
+  ForbiddenException,
   BadRequestException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -9,90 +10,138 @@ import { Store, StoreDocument } from './schemas/store.schema';
 import { CreateStoreDto } from './dto/create-store.dto';
 import { UpdateStoreDto } from './dto/update-store.dto';
 import { Clothes, ClothesDocument } from '../clothes/schemas/clothes.schema';
-import { User, UserDocument } from 'src/user/schemas/user.schema';
 
 @Injectable()
 export class StoreService {
   constructor(
     @InjectModel(Store.name) private storeModel: Model<StoreDocument>,
-    @InjectModel(User.name) private userModel: Model<UserDocument>,
     @InjectModel(Clothes.name) private clothesModel: Model<ClothesDocument>,
   ) {}
 
-  //  Vérifie l'existence des clés étrangères
-  private async validateForeignKeys(userId?: string, clothesId?: string) {
-    if (userId) {
-      if (!Types.ObjectId.isValid(userId)) {
-        throw new BadRequestException(`Invalid userId: ${userId}`);
-      }
+  private isValidId(id: string): boolean {
+    return Types.ObjectId.isValid(id);
+  }
 
-      const userExists = await this.userModel.exists({ _id: userId });
-      if (!userExists) {
-        throw new NotFoundException(`User with ID ${userId} not found`);
-      }
-    }
+  // Vérifie que le vêtement existe ET appartient à l'utilisateur
+  private async verifyClothesOwnership(clothesId: Types.ObjectId, userId: string) {
+    const clothes = await this.clothesModel.findOne({
+      _id: clothesId,
+      userId: new Types.ObjectId(userId),
+    });
 
-    if (clothesId) {
-      if (!Types.ObjectId.isValid(clothesId)) {
-        throw new BadRequestException(`Invalid clothesId: ${clothesId}`);
-      }
-
-      const clothesExists = await this.clothesModel.exists({ _id: clothesId });
-      if (!clothesExists) {
-        throw new NotFoundException(`Clothes with ID ${clothesId} not found`);
-      }
+    if (!clothes) {
+      throw new ForbiddenException('Ce vêtement ne vous appartient pas ou n\'existe pas');
     }
   }
 
-  //  CREATE
-  async create(createStoreDto: CreateStoreDto): Promise<Store> {
-    await this.validateForeignKeys(createStoreDto.userId, createStoreDto.clothesId);
-    const storeItem = new this.storeModel(createStoreDto);
+  // CREATE
+  async create(dto: CreateStoreDto, userId: string): Promise<Store> {
+    if (!this.isValidId(userId) || !this.isValidId(dto.clothesId.toString())) {
+      throw new BadRequestException('Invalid ID format');
+    }
+
+    await this.verifyClothesOwnership(dto.clothesId, userId);
+
+    const storeItem = new this.storeModel({
+      ...dto,
+      userId: new Types.ObjectId(userId),
+    });
+
     return await storeItem.save();
   }
 
-  // READ ALL
+  // FIND ALL
   async findAll(): Promise<Store[]> {
-    return this.storeModel.find().populate('userId clothesId').exec();
+    return this.storeModel
+      .find()
+      .populate('userId', '-password -__v')
+      .populate('clothesId')
+      .exec();
   }
 
-  //  READ ONE
+  // FIND BY USER ID
+  async findByUserId(userId: string): Promise<Store[]> {
+    if (!this.isValidId(userId)) {
+      throw new BadRequestException('Invalid user ID');
+    }
+
+    return this.storeModel
+      .find({ userId: new Types.ObjectId(userId) })
+      .populate('userId', '-password -__v')
+      .populate('clothesId')
+      .exec();
+  }
+
+  // FIND ONE
   async findOne(id: string): Promise<Store> {
-    const storeItem = await this.storeModel
+    if (!this.isValidId(id)) {
+      throw new BadRequestException('Invalid store item ID');
+    }
+
+    const item = await this.storeModel
       .findById(id)
-      .populate('userId clothesId')
+      .populate('userId', '-password -__v')
+      .populate('clothesId')
       .exec();
 
-    if (!storeItem) {
+    if (!item) {
       throw new NotFoundException(`Store item with ID ${id} not found`);
     }
-    return storeItem;
+
+    return item;
   }
 
   // UPDATE
-  async update(id: string, updateStoreDto: UpdateStoreDto): Promise<Store> {
-    if (updateStoreDto.userId || updateStoreDto.clothesId) {
-      await this.validateForeignKeys(updateStoreDto.userId, updateStoreDto.clothesId);
+  async update(id: string, dto: UpdateStoreDto, userId: string): Promise<Store> {
+    if (!this.isValidId(id)) {
+      throw new BadRequestException('Invalid store item ID');
+    }
+
+    const item = await this.storeModel.findById(id).exec();
+    if (!item) {
+      throw new NotFoundException(`Store item with ID ${id} not found`);
+    }
+
+    if (item.userId.toString() !== userId) {
+      throw new ForbiddenException('Vous ne pouvez pas modifier cet article');
+    }
+
+    if (dto.clothesId) {
+      await this.verifyClothesOwnership(dto.clothesId, userId);
     }
 
     const updated = await this.storeModel
-      .findByIdAndUpdate(id, updateStoreDto, { new: true })
+      .findOneAndUpdate(
+        { _id: id, userId: new Types.ObjectId(userId) },
+        dto,
+        { new: true },
+      )
+      .populate('userId', '-password -__v')
+      .populate('clothesId')
       .exec();
 
     if (!updated) {
       throw new NotFoundException(`Store item with ID ${id} not found`);
     }
+
     return updated;
   }
 
   // DELETE
-  async remove(id: string): Promise<{ message: string }> {
-    const result = await this.storeModel.findByIdAndDelete(id).exec();
+  async remove(id: string, userId: string): Promise<void> {
+    if (!this.isValidId(id)) {
+      throw new BadRequestException('Invalid store item ID');
+    }
 
-    if (!result) {
+    const item = await this.storeModel.findById(id).exec();
+    if (!item) {
       throw new NotFoundException(`Store item with ID ${id} not found`);
     }
 
-    return { message: 'Store item deleted successfully' };
+    if (item.userId.toString() !== userId) {
+      throw new ForbiddenException('Vous ne pouvez pas supprimer cet article');
+    }
+
+    await this.storeModel.findByIdAndDelete(id).exec();
   }
 }
