@@ -15,10 +15,9 @@ async function bootstrap() {
   );
 
   app.enableCors({
-  origin: 'http://localhost:3000',
-  credentials: true,
-});
-
+    origin: process.env.FRONTEND_URL || '*',
+    credentials: true,
+  });
 
   const config = new DocumentBuilder()
     .setTitle('Labasni API')
@@ -31,6 +30,8 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('docs', app, document);
 
-  await app.listen(process.env.PORT ?? 3000);
+  const port = process.env.PORT ?? 3000;
+  await app.listen(port, '0.0.0.0');
+  console.log('Server is running on port ${port}');
 }
 bootstrap();

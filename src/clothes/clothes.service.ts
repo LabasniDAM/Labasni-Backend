@@ -31,12 +31,17 @@ export class ClothesService {
   }
 
   //  CREATE : avec vérification de la clé étrangère
-  async create(createClothesDto: CreateClotheDto): Promise<Clothes> {
+  async create(createClothesDto: CreateClotheDto & { userId: string }): Promise<Clothes> {
+    // Vérifie que l'utilisateur existe
     await this.verifyUserExists(createClothesDto.userId);
 
-    const newClothes = new this.clothesModel(createClothesDto);
-    return await newClothes.save();
-  }
+    const newClothes = new this.clothesModel({
+      ...createClothesDto,
+      userId: new Types.ObjectId(createClothesDto.userId), // ← ObjectId
+    });
+
+  return await newClothes.save();
+}
 
   //  GET ALL
   async findAll(): Promise<Clothes[]> {
@@ -100,4 +105,16 @@ export class ClothesService {
 
     return deleted;
   }
+  async findByUserId(userId: string): Promise<Clothes[]> {
+    console.log('findByUserId called with:', userId); // ← AJOUTE ÇA
+  if (!Types.ObjectId.isValid(userId)) {
+    throw new ForbiddenException('Invalid user ID format');
+  }
+
+  // Convertir la string en ObjectId
+  return await this.clothesModel
+    .find({ userId: new Types.ObjectId(userId) })
+    .populate('userId', '-password -__v')
+    .exec();
+}
 }

@@ -11,6 +11,8 @@ import {
   NotFoundException,
   BadRequestException,
   UseGuards,
+  Req,
+  UnauthorizedException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -26,6 +28,7 @@ import { ClothesService } from './clothes.service';
 import { CreateClotheDto } from './dto/create-clothe.dto';
 import { UpdateClotheDto } from './dto/update-clothe.dto';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
+import { GetUser } from 'src/common/decorators/get-user.decorator';
 
 @ApiTags('Clothes')
 @ApiBearerAuth()
@@ -37,24 +40,24 @@ export class ClothController {
   // ------------------ CREATE ------------------
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Create a new clothing item' })
-  @ApiBody({
-    type: CreateClotheDto,
-    description: 'Data required to create a clothing item',
-  })
-  @ApiResponse({
-    status: 201,
-    description: 'Clothing item created successfully.',
-  })
-  @ApiBadRequestResponse({
-    description: 'Invalid data sent in the request body.',
-  })
-  async create(@Body() createClothDto: CreateClotheDto) {
-    try {
-      return await this.clothService.create(createClothDto);
-    } catch (error) {
-      throw new BadRequestException('Error occurred while creating the clothing item.');
+  @ApiOperation({ summary: 'Create a new clothing item (user from JWT)' })
+  @ApiBody({ type: CreateClotheDto })
+  @ApiBearerAuth()
+  async create(
+    @Body() createClothDto: CreateClotheDto,
+    @GetUser() user: any,
+  ) {
+    if (!user?.id) {
+      throw new UnauthorizedException('Utilisateur non authentifié');
     }
+
+    // Ajoute userId automatiquement
+    const clothesWithUser = {
+      ...createClothDto,
+      userId: user.id, // ← AUTOMATIQUE
+    };
+
+    return await this.clothService.create(clothesWithUser);
   }
 
   // ------------------ FIND ALL ------------------
@@ -68,6 +71,22 @@ export class ClothController {
   async findAll() {
     return await this.clothService.findAll();
   }
+  
+  @Get('my')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Récupérer mes vêtements' })
+  @ApiResponse({ status: 200, description: 'Liste des vêtements de l\'utilisateur connecté.' })
+  @ApiBearerAuth()
+  async findMyClothes(@GetUser() user: any) {
+  if (!user?.id) {
+    throw new UnauthorizedException('Utilisateur non authentifié');
+  }
+
+  const clothes = await this.clothService.findByUserId(user.id);
+  
+  // RETOURNE LE TABLEAU DIRECTEMENT
+  return clothes; // ← DOIT ÊTRE [Clothe]
+}
 
   // ------------------ FIND ONE ------------------
   @Get(':id')
@@ -143,4 +162,5 @@ export class ClothController {
     if (!deleted) throw new NotFoundException(`No clothing item found with ID ${id}`);
     return;
   }
+  
 }

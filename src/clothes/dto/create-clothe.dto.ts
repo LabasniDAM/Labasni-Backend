@@ -2,12 +2,7 @@ import { IsMongoId, IsOptional, IsString, IsUrl } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateClotheDto {
-  @ApiProperty({
-    description: 'The unique ID of the user who owns the clothing item.',
-    example: '6725c8f9a2d4b5f8e1234567',
-  })
-  @IsMongoId()
-  userId: string;
+  
 
   @ApiProperty({
     description: 'The URL of the clothing image.',
