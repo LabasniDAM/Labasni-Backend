@@ -87,11 +87,12 @@ export class OutfitsController {
   // Randomly generated outfit
 
 @Post('generate')
-@HttpCode(HttpStatus.CREATED)
-@ApiOperation({ summary: 'Générer un outfit aléatoire avec 3 vêtements de l\'utilisateur' })
-@ApiResponse({ status: 201, description: 'Outfit généré avec succès', type: Outfit })
+@HttpCode(HttpStatus.OK) // PAS 201, car c’est juste une suggestion
+@ApiOperation({ summary: 'Générer une suggestion d\'outfit aléatoire' })
+@ApiResponse({ status: 200, description: 'Suggestion générée avec succès', type: Outfit })
 @ApiResponse({ status: 400, description: 'Pas assez de vêtements (min 3)' })
-async generateRandomOutfit(@GetUser() user: any): Promise<Outfit> {
+async generateRandomOutfit(@GetUser() user: any): Promise<Partial<Outfit>> {
   return this.outfitsService.generateRandom(user.id);
 }
+
 }

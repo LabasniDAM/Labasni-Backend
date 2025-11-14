@@ -147,7 +147,8 @@ async update(id: string, dto: UpdateOutfitDto, userId: string): Promise<Outfit> 
 
   // outfits.service.ts
 
-async generateRandom(userId: string): Promise<Outfit> {
+
+async generateRandom(userId: string): Promise<Partial<Outfit>> {
   if (!this.isValidId(userId)) {
     throw new BadRequestException('Invalid user ID');
   }
@@ -167,17 +168,15 @@ async generateRandom(userId: string): Promise<Outfit> {
   const shuffled = userClothes.sort(() => 0.5 - Math.random());
   const selectedClothes = shuffled.slice(0, 3);
 
-  const clothesIds = selectedClothes.map((c) => c._id);
+  // 3. Retourner un "suggestion" sans sauvegarder
+  const clothesIds: Types.ObjectId[] = selectedClothes.map((c) => c._id as Types.ObjectId);
 
-  // 3. Créer l'outfit
-  const outfit = new this.outfitModel({
-    userId: new Types.ObjectId(userId),
+  return {
     clothesIds,
     eventType: 'Aléatoire',
     weatherType: 'Toutes saisons',
     status: 'pending',
-  });
-
-  return await outfit.save();
+  };
 }
+
 }
