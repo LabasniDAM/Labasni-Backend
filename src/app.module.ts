@@ -12,6 +12,7 @@ import { EventsModule } from './events/events.module';
 import { StoreModule } from './store/store.module';
 import { SuitcasesModule } from './suitcases/suitcases.module';
 import { AvatarsModule } from './avatars/avatars.module';
+import { CloudinaryModule } from './cloudinary/cloudinary.module';
 import { ConfigModule } from '@nestjs/config';
 import Joi from 'joi';
 
@@ -43,6 +44,11 @@ import Joi from 'joi';
         TWILIO_AUTH_TOKEN: Joi.string().required(),
         TWILIO_PHONE_NUMBER: Joi.string().required(),
 
+        // CLOUDINARY
+        CLOUDINARY_CLOUD_NAME: Joi.string().required(),
+        CLOUDINARY_API_KEY: Joi.string().required(),
+        CLOUDINARY_API_SECRET: Joi.string().required(),
+
         // PIN
         //PIN_EXPIRATION_MINUTES: Joi.number().default(10),
       }),
@@ -66,6 +72,7 @@ import Joi from 'joi';
     StoreModule,
     SuitcasesModule,
     AvatarsModule,
+    CloudinaryModule,
   ],
   controllers: [AppController],
   providers: [AppService],
