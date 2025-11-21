@@ -37,7 +37,7 @@ import { GetUser } from 'src/common/decorators/get-user.decorator';
 export class ClothController {
   constructor(private readonly clothService: ClothesService) {}
 
-  // ------------------ CREATE ------------------
+  // MODIF : Ajoute isCorrected si originalDetection présent
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Create a new clothing item (user from JWT)' })
@@ -55,9 +55,18 @@ export class ClothController {
     const clothesWithUser = {
       ...createClothDto,
       userId: user.id, // ← AUTOMATIQUE
+      isCorrected: !!createClothDto.originalDetection,  // AJOUT : true si correction
     };
 
     return await this.clothService.create(clothesWithUser);
+  }
+
+  // AJOUT : Endpoint pour exporter corrections (admin only, ajoute auth si besoin)
+  @Get('corrections')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Exporter les vêtements corrigés pour fine-tuning' })
+  async getCorrections() {
+    return await this.clothService.findCorrected();
   }
 
   // ------------------ FIND ALL ------------------

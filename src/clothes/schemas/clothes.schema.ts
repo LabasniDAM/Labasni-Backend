@@ -32,6 +32,17 @@ export class Clothes {
 
   @Prop({ default: 0 })
   rejectedCount: number;
+
+  @Prop({ default: false })
+isCorrected: boolean;
+
+@Prop({ type: Object })
+originalDetection: {
+  type: string;
+  color: string;
+  style: string;
+  season: string;
+};
 }
 
 export const ClothesSchema = SchemaFactory.createForClass(Clothes);

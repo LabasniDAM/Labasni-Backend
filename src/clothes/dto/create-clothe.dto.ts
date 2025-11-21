@@ -1,4 +1,4 @@
-import { IsMongoId, IsOptional, IsString, IsUrl } from 'class-validator';
+import { IsMongoId, IsObject, IsOptional, IsString, IsUrl } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateClotheDto {
@@ -44,4 +44,15 @@ export class CreateClotheDto {
   @IsOptional()
   @IsString()
   style?: string;
+
+  @IsOptional()  // AJOUT : Optionnel
+  @IsObject()    // AJOUT : C'est un objet
+  @ApiProperty({ type: Object, description: 'Détection originale du modèle (pour fine-tuning)', required: false })
+  originalDetection?: {  // AJOUT : ? pour optionnel
+    type: string;
+    color: string;
+    style: string;
+    season: string;
+  };
+
 }

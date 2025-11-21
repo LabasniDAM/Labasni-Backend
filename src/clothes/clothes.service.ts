@@ -17,7 +17,7 @@ export class ClothesService {
     @InjectModel(User.name) private userModel: Model<Document>,
   ) {}
 
-  //  Vérifie si un utilisateur existe avant d'associer un vêtement
+  // Vérifie si un utilisateur existe avant d'associer un vêtement
   private async verifyUserExists(userId: string) {
     if (!Types.ObjectId.isValid(userId)) {
       throw new ForbiddenException(`Invalid user ID format`);
@@ -30,7 +30,7 @@ export class ClothesService {
     return user;
   }
 
-  //  CREATE : avec vérification de la clé étrangère
+  // CREATE : avec vérification de la clé étrangère
   async create(createClothesDto: CreateClotheDto & { userId: string }): Promise<Clothes> {
     // Vérifie que l'utilisateur existe
     await this.verifyUserExists(createClothesDto.userId);
@@ -43,6 +43,10 @@ export class ClothesService {
   return await newClothes.save();
 }
 
+  // AJOUT : Trouver tous les vêtements corrigés pour fine-tuning
+  async findCorrected(): Promise<Clothes[]> {
+    return await this.clothesModel.find({ isCorrected: true }).exec();
+  }
   //  GET ALL
   async findAll(): Promise<Clothes[]> {
     return await this.clothesModel
