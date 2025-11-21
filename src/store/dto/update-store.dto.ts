@@ -1,8 +1,10 @@
-// src/store/dto/update-store.dto.ts
 import { PartialType } from '@nestjs/mapped-types';
 import { CreateStoreDto } from './create-store.dto';
+import { IsString, IsOptional } from 'class-validator';
 
 export class UpdateStoreDto extends PartialType(CreateStoreDto) {
-    price?: number;
-    status?: 'available' | 'sold';
+  // On rend tous les champs optionnels, y compris size
+  @IsOptional()
+  @IsString()
+  size?: string;
 }

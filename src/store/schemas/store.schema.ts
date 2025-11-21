@@ -14,6 +14,10 @@ export class Store {
   @Prop({ required: true, min: 0 })
   price: number;
 
+  // AJOUT DU CHAMP SIZE
+  @Prop({ required: true, trim: true })
+  size: string;
+
   @Prop({ enum: ['available', 'sold'], default: 'available' })
   status: 'available' | 'sold';
 }

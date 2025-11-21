@@ -14,6 +14,7 @@ import { SuitcasesModule } from './suitcases/suitcases.module';
 import { AvatarsModule } from './avatars/avatars.module';
 import { CloudinaryModule } from './cloudinary/cloudinary.module';
 import { ConfigModule } from '@nestjs/config';
+import { ChatModule } from './chat/chat.module';
 import Joi from 'joi';
 
 @Module({
@@ -73,6 +74,7 @@ import Joi from 'joi';
     SuitcasesModule,
     AvatarsModule,
     CloudinaryModule,
+    ChatModule,
   ],
   controllers: [AppController],
   providers: [AppService],
