@@ -14,12 +14,21 @@ export class Store {
   @Prop({ required: true, min: 0 })
   price: number;
 
-  // AJOUT DU CHAMP SIZE
   @Prop({ required: true, trim: true })
   size: string;
 
   @Prop({ enum: ['available', 'sold'], default: 'available' })
   status: 'available' | 'sold';
+
+  // ✅ NOUVEAUX CHAMPS
+  @Prop({ type: Types.ObjectId, ref: 'User', required: false })
+  buyerId?: Types.ObjectId;  // Qui a acheté
+
+  @Prop({ type: Date, required: false })
+  soldAt?: Date;  // Quand l'achat a été fait
+
+  @Prop({ type: String, required: false })
+  stripePaymentIntentId?: string;  // Référence Stripe
 }
 
 export const StoreSchema = SchemaFactory.createForClass(Store);

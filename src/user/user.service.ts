@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { FilterQuery, Model, Types } from 'mongoose';
 import { User, UserDocument } from './schemas/user.schema';
@@ -105,56 +105,56 @@ export class UserService {
   }
 
   async updateById(
-  id: string | Types.ObjectId,
-  updates: UpdateUserInput,
-): Promise<SafeUser | null> {
-  const normalizedUpdates: UpdateUserInput = { ...updates };
-  if (normalizedUpdates.email) {
-    normalizedUpdates.email = normalizedUpdates.email.toLowerCase();
-  }
-
-  // Séparer les champs à mettre à jour et ceux à supprimer
-  const setFields: any = {};
-  const unsetFields: any = {};
-
-  Object.entries(normalizedUpdates).forEach(([key, value]) => {
-    if (value === undefined) {
-      unsetFields[key] = '';
-    } else {
-      setFields[key] = value;
+    id: string | Types.ObjectId,
+    updates: UpdateUserInput,
+  ): Promise<SafeUser | null> {
+    const normalizedUpdates: UpdateUserInput = { ...updates };
+    if (normalizedUpdates.email) {
+      normalizedUpdates.email = normalizedUpdates.email.toLowerCase();
     }
-  });
 
-  // Construire l'opération de mise à jour
-  const updateOperation: any = {};
-  if (Object.keys(setFields).length > 0) {
-    updateOperation.$set = setFields;
+    // Séparer les champs à mettre à jour et ceux à supprimer
+    const setFields: any = {};
+    const unsetFields: any = {};
+
+    Object.entries(normalizedUpdates).forEach(([key, value]) => {
+      if (value === undefined) {
+        unsetFields[key] = '';
+      } else {
+        setFields[key] = value;
+      }
+    });
+
+    // Construire l'opération de mise à jour
+    const updateOperation: any = {};
+    if (Object.keys(setFields).length > 0) {
+      updateOperation.$set = setFields;
+    }
+    if (Object.keys(unsetFields).length > 0) {
+      updateOperation.$unset = unsetFields;
+    }
+
+    // Si aucune opération, retourner l'utilisateur existant
+    if (Object.keys(updateOperation).length === 0) {
+      return this.findById(id);
+    }
+
+    const user = await this.userModel
+      .findOneAndUpdate(
+        { _id: typeof id === 'string' ? new Types.ObjectId(id) : id },
+        updateOperation,
+        { new: true, runValidators: true },
+      )
+      .exec();
+
+    if (!user) {
+      return null;
+    }
+
+    const safeUser = user.toObject() as SafeUser;
+    safeUser.id = safeUser.id ?? String(user._id);
+    return safeUser;
   }
-  if (Object.keys(unsetFields).length > 0) {
-    updateOperation.$unset = unsetFields;
-  }
-
-  // Si aucune opération, retourner l'utilisateur existant
-  if (Object.keys(updateOperation).length === 0) {
-    return this.findById(id);
-  }
-
-  const user = await this.userModel
-    .findOneAndUpdate(
-      { _id: typeof id === 'string' ? new Types.ObjectId(id) : id },
-      updateOperation,
-      { new: true, runValidators: true },
-    )
-    .exec();
-
-  if (!user) {
-    return null;
-  }
-
-  const safeUser = user.toObject() as SafeUser;
-  safeUser.id = safeUser.id ?? String(user._id);
-  return safeUser;
-}
 
   async removeById(id: string | Types.ObjectId): Promise<void> {
     await this.userModel
@@ -175,10 +175,31 @@ export class UserService {
   }
 
   async findByAppleId(appleId: string): Promise<SafeUser | null> {
-  const user = await this.userModel.findOne({ appleId }).exec();
-  if (!user) {
-    return null;
+    const user = await this.userModel.findOne({ appleId }).exec();
+    if (!user) {
+      return null;
+    }
+    const safeUser = user.toObject() as SafeUser;
+    safeUser.id = safeUser.id ?? String(user._id);
+    return safeUser;
   }
+
+  async addToBalance(userId: string, amount: number): Promise<SafeUser | null> {
+  if (amount <= 0) {
+    throw new BadRequestException('Amount must be positive');
+  }
+  
+  // Récupérer l'utilisateur
+  const user = await this.userModel.findById(userId).exec();
+  if (!user) {
+    throw new NotFoundException(`User with ID ${userId} not found`);
+  }
+
+  // Incrémenter le balance
+  user.balance = (user.balance || 0) + amount;
+  await user.save();
+
+  // Retourner SafeUser
   const safeUser = user.toObject() as SafeUser;
   safeUser.id = safeUser.id ?? String(user._id);
   return safeUser;

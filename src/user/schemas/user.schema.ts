@@ -53,6 +53,9 @@ verificationCodeExpiresAt?: Date;
   @Prop({ type: Date, required: false, default: null })
   resetOtpExpiresAt?: Date | null;
 
+  @Prop({ default: 0, min: 0 })
+  balance: number;  // Balance du seller en cents (ex. : 1000 = 10.00 USD)
+
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
