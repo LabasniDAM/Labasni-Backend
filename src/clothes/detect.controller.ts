@@ -1,4 +1,4 @@
-// src/detect/detect.controller.ts
+// src/clothes/detect.controller.ts
 import {
   Controller,
   Post,
@@ -39,28 +39,71 @@ export class DetectController {
     }
 
     const tempPath = file.path;
+    const noBgPath = tempPath.replace(extname(tempPath), '_nobg.png');
 
     try {
-      // Upload Cloudinary
-      const uploadResult = await cloudinary.uploader.upload(tempPath, {
+      console.log('📸 Image reçue:', tempPath);
+
+      // ✨ ÉTAPE 1 : Supprime le background via API
+      console.log('🔄 Suppression du background via API remove.bg...');
+      
+      try {
+        const { stdout, stderr } = await execAsync(
+          `python3 remove_bg_api.py --input "${tempPath}" --output "${noBgPath}"`,
+        );
+        
+        console.log('✅ Background supprimé:', noBgPath);
+        
+        // Affiche les crédits restants (si disponible dans stdout)
+        if (stdout.includes('Crédits restants')) {
+          console.log(stdout.trim());
+        }
+      } catch (bgError: any) {
+        console.error('❌ Erreur background removal:', bgError.stderr || bgError.message);
+        
+        // Si l'API échoue, on utilise l'image originale
+        console.warn('⚠️ Fallback : utilisation de l\'image originale');
+        fs.copyFileSync(tempPath, noBgPath);
+      }
+
+      // ✨ ÉTAPE 2 : Upload l'image SANS background sur Cloudinary
+      console.log('☁️ Upload Cloudinary...');
+      const uploadResult = await cloudinary.uploader.upload(noBgPath, {
         folder: 'labasni',
+        format: 'png', // Force PNG pour garder transparence
+        resource_type: 'image',
       });
+      console.log('✅ Upload terminé:', uploadResult.secure_url);
 
-      // Détection Python
-      const { stdout } = await execAsync(`python3 detect.py --image "${tempPath}"`);
+      // ✨ ÉTAPE 3 : Détection IA sur l'image ORIGINALE
+      // (La détection marche mieux avec le contexte du background)
+      console.log('🤖 Détection IA...');
+      const { stdout: detectionOutput } = await execAsync(
+        `python3 detect.py --image "${tempPath}"`,
+      );
+      console.log('✅ Détection terminée');
 
-      // Nettoyage
-      fs.unlinkSync(tempPath);
+      // ✨ NETTOYAGE : Supprime fichiers temporaires
+      if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+      if (fs.existsSync(noBgPath)) fs.unlinkSync(noBgPath);
 
+      // ✨ RETOUR : Image sans BG + Détections
       return {
         success: true,
-        image_url: uploadResult.secure_url,
+        image_url: uploadResult.secure_url, // ← Image SANS background
         public_id: uploadResult.public_id,
-        detection_result: stdout.trim(),
+        detection_result: detectionOutput.trim(),
+        background_removed: true,
       };
     } catch (err: any) {
+      // Nettoyage en cas d'erreur
       if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-      throw new BadRequestException(err.message || 'Erreur lors de la détection');
+      if (fs.existsSync(noBgPath)) fs.unlinkSync(noBgPath);
+
+      console.error('❌ Erreur complète:', err);
+      throw new BadRequestException(
+        err.message || 'Erreur lors de la détection',
+      );
     }
   }
 }
