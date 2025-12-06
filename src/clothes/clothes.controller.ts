@@ -55,11 +55,7 @@ export class ClothController {
     }
 
     const clothes = await this.clothService.findAllByUser(user.id);
-    return {
-      success: true,
-      count: clothes.length,
-      data: clothes,
-    };
+    return clothes; // Retourne directement le tableau pour compatibilité iOS
   }
 
   /**
@@ -82,11 +78,7 @@ export class ClothController {
       user.id,
       category,
     );
-    return {
-      success: true,
-      count: clothes.length,
-      data: clothes,
-    };
+    return clothes; // Retourne directement le tableau pour compatibilité iOS
   }
 
   /**
@@ -124,11 +116,7 @@ export class ClothController {
       return acc;
     }, {});
 
-    return {
-      success: true,
-      totalItems: clothes.length,
-      data: grouped,
-    };
+    return grouped; // Retourne directement l'objet groupé (pas de wrapper) pour compatibilité iOS
   }
 
   /**
@@ -170,11 +158,7 @@ export class ClothController {
       user.id,
     );
 
-    return {
-      success: true,
-      count: clothes.length,
-      data: clothes,
-    };
+    return clothes; // Retourne directement le tableau pour compatibilité iOS
   }
 
   /**
@@ -197,11 +181,7 @@ export class ClothController {
     }
 
     const clothing = await this.clothService.reprocessClothingImage(id, user.id);
-    return {
-      success: true,
-      message: 'Traitement relancé',
-      data: clothing,
-    };
+    return clothing; // Retourne directement l'objet pour compatibilité iOS
   }
 
   // ==========================================
@@ -212,14 +192,14 @@ export class ClothController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Exporter les vêtements corrigés pour fine-tuning' })
   async getCorrections() {
-    return await this.clothService.findCorrected();
+    return await this.clothService.findCorrected(); // Déjà un tableau direct
   }
 
   @Get('stats/global')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Statistiques globales des corrections' })
   async getGlobalStats() {
-    return await this.clothService.getGlobalCorrectionStats();
+    return await this.clothService.getGlobalCorrectionStats(); // Retourne directement l'objet stats
   }
 
   @Get('stats/me')
@@ -229,7 +209,7 @@ export class ClothController {
     if (!user?.id) {
       throw new UnauthorizedException('Utilisateur non authentifié');
     }
-    return await this.clothService.getUserStats(user.id);
+    return await this.clothService.getUserStats(user.id); // Retourne directement l'objet stats
   }
 
   @Get('sell-suggestions')
@@ -239,7 +219,7 @@ export class ClothController {
     if (!user?.id) {
       throw new UnauthorizedException('Utilisateur non authentifié');
     }
-    return await this.clothService.getSellSuggestions(user.id);
+    return await this.clothService.getSellSuggestions(user.id); // Retourne directement le tableau
   }
 
   @Post()
@@ -255,14 +235,14 @@ export class ClothController {
       userId: user.id,
     });
 
-    return result;
+    return result; // Déjà direct
   }
 
   @Get()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Récupérer tous les vêtements (admin)' })
   async findAll() {
-    return await this.clothService.findAll();
+    return await this.clothService.findAll(); // Déjà un tableau direct
   }
 
   @Get(':id')
@@ -275,10 +255,7 @@ export class ClothController {
     }
 
     const cloth = await this.clothService.findOneByIdAndUser(id, user.id);
-    return {
-      success: true,
-      data: cloth,
-    };
+    return cloth; // Retourne directement l'objet pour compatibilité iOS
   }
 
   @Patch(':id')
@@ -290,7 +267,7 @@ export class ClothController {
     @Body() updateClothDto: UpdateClotheDto,
   ) {
     try {
-      return await this.clothService.update(id, updateClothDto);
+      return await this.clothService.update(id, updateClothDto); // Déjà direct
     } catch (error) {
       throw new NotFoundException(`Unable to update clothing item with ID ${id}`);
     }
@@ -308,7 +285,7 @@ export class ClothController {
     if (!user?.id) {
       throw new UnauthorizedException('Utilisateur non authentifié');
     }
-    return await this.clothService.updateFeedback(id, accepted, user.id);
+    return await this.clothService.updateFeedback(id, accepted, user.id); // Déjà direct
   }
 
   @Delete(':id')
@@ -322,6 +299,6 @@ export class ClothController {
 
     // Utiliser la nouvelle méthode deleteClothing pour VTO
     await this.clothService.deleteClothing(id, user.id);
-    return;
+    return; // Déjà vide (204 No Content)
   }
 }
