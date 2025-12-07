@@ -82,42 +82,46 @@ export class ClothController {
   }
 
   /**
-   * GET /clothes/vto/ready
-   * Récupère uniquement les vêtements PRÊTS pour le VTO
-   * (images détourées et disponibles)
-   */
-  @Get('vto/ready')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ 
-    summary: 'Récupérer les vêtements prêts pour le Virtual Try-On',
-    description: 'Retourne uniquement les vêtements dont les images ont été traitées et sont prêtes pour le VTO'
-  })
-  async getVTOReadyClothes(@GetUser() user: any) {
-    if (!user?.id) {
-      throw new UnauthorizedException('Utilisateur non authentifié');
-    }
-
-    const clothes = await this.clothService.findReadyForVTO(user.id);
-
-    // Grouper par catégorie pour faciliter l'affichage client
-    const grouped = clothes.reduce((acc, cloth) => {
-      const category = cloth.category.toLowerCase();
-      if (!acc[category]) {
-        acc[category] = [];
-      }
-      acc[category].push({
-        id: cloth._id,
-        imageURL: cloth.imageURL,
-        processedImageURL: cloth.processedImageURL,
-        category: cloth.category,
-        color: cloth.color,
-        style: cloth.style,
-      });
-      return acc;
-    }, {});
-
-    return grouped; // Retourne directement l'objet groupé (pas de wrapper) pour compatibilité iOS
+ * GET /clothes/vto/ready
+ * Récupère uniquement les vêtements PRÊTS pour le VTO
+ * (images détourées et disponibles)
+ */
+@Get('vto/ready')
+@HttpCode(HttpStatus.OK)
+@ApiOperation({ 
+  summary: 'Récupérer les vêtements prêts pour le Virtual Try-On',
+  description: 'Retourne uniquement les vêtements dont les images ont été traitées et sont prêtes pour le VTO'
+})
+async getVTOReadyClothes(@GetUser() user: any) {
+  if (!user?.id) {
+    throw new UnauthorizedException('Utilisateur non authentifié');
   }
+
+  const clothes = await this.clothService.findReadyForVTO(user.id);
+
+  // ✅ CORRECTION : Retourner directement l'objet groupé sans wrapper
+  const grouped = clothes.reduce((acc, cloth) => {
+    const category = cloth.category.toLowerCase();
+    if (!acc[category]) {
+      acc[category] = [];
+    }
+    acc[category].push({
+      id: cloth._id,
+      imageURL: cloth.imageURL,
+      processedImageURL: cloth.processedImageURL,
+      category: cloth.category,
+      color: cloth.color,
+      style: cloth.style,
+      season: cloth.season,
+      processingStatus: cloth.processingStatus,  // ✅ Ajouté
+      isProcessed: cloth.isProcessed,            // ✅ Ajouté
+    });
+    return acc;
+  }, {});
+
+  // ✅ Pas de wrapper { success, data, etc. }
+  return grouped;
+}
 
   /**
    * POST /clothes/vto/batch
@@ -301,4 +305,48 @@ export class ClothController {
     await this.clothService.deleteClothing(id, user.id);
     return; // Déjà vide (204 No Content)
   }
+  /**
+ * POST /clothes/migrate-vto
+ * Retraite TOUS les vêtements de l'utilisateur pour VTO
+ */
+@Post('migrate-vto')
+@HttpCode(HttpStatus.OK)
+@ApiOperation({ 
+  summary: 'Retraiter tous mes vêtements pour VTO',
+  description: 'Lance le traitement Python pour tous les vêtements qui n\'ont pas d\'image détourée'
+})
+async migrateUserClothesToVTO(@GetUser() user: any) {
+  if (!user?.id) {
+    throw new UnauthorizedException('Utilisateur non authentifié');
+  }
+
+  const result = await this.clothService.reprocessAllUserClothes(user.id);
+  
+  return {
+    message: `Migration VTO lancée pour ${result.queued} vêtements`,
+    total: result.total,
+    queued: result.queued,
+    note: 'Le traitement peut prendre quelques minutes. Les vêtements seront disponibles progressivement.'
+  };
+}
+
+/**
+ * GET /clothes/vto/status
+ * Vérifie le statut du traitement VTO
+ */
+@Get('vto/status')
+@HttpCode(HttpStatus.OK)
+@ApiOperation({ 
+  summary: 'Obtenir le statut du traitement VTO',
+  description: 'Retourne le nombre de vêtements par statut de traitement'
+})
+async getVTOProcessingStatus(@GetUser() user: any) {
+  if (!user?.id) {
+    throw new UnauthorizedException('Utilisateur non authentifié');
+  }
+
+  const stats = await this.clothService.getVTOProcessingStats(user.id);
+  
+  return stats;
+}
 }

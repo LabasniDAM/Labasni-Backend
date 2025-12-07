@@ -144,3 +144,8 @@ test_nobg.png
 .DS_Store
 .DS_Store
 
+.DS_Store
+/src/python-vto-service/venv/bin
+/src/python-vto-service/venv
+/src/python-vto-service/cache_images
+.DS_Store

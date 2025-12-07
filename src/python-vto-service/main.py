@@ -1,6 +1,7 @@
 """
 Service FastAPI pour Virtual Try-On avec Cloudinary
 Port: 5001
+VERSION DÉMO : Sans rembg, utilise uniquement processedImageURL
 """
 
 import uvicorn
@@ -12,7 +13,7 @@ import numpy as np
 import cv2
 import mediapipe as mp
 from PIL import Image
-from rembg import remove
+# from rembg import remove  # ✅ DÉSACTIVÉ pour démo
 import os
 import requests
 from io import BytesIO
@@ -22,18 +23,15 @@ import hashlib
 import cloudinary
 import cloudinary.uploader
 from dotenv import load_dotenv
+import time
 
-# ✨ AJOUTER : Charger le .env
 load_dotenv()
 
-
-# Configuration du logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Labasni VTO Service", version="2.0")
+app = FastAPI(title="Labasni VTO Service", version="2.0-DEMO")
 
-# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -45,7 +43,6 @@ app.add_middleware(
 # ==========================================
 # CONFIGURATION CLOUDINARY
 # ==========================================
-# ⚠️ IMPORTANT : Configure ces variables d'environnement
 cloudinary.config(
     cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME", "dechk1ohr"),
     api_key=os.getenv("CLOUDINARY_API_KEY", "your_api_key"),
@@ -91,20 +88,18 @@ logger.info("✅ MediaPipe initialisé")
 # ==========================================
 # CACHE EN MÉMOIRE
 # ==========================================
-image_cache = {}  # {url_hash: numpy_array}
+image_cache = {}
 MAX_CACHE_SIZE = 100
 
 def get_cache_key(url: str) -> str:
-    """Génère une clé de cache depuis l'URL"""
     return hashlib.md5(url.encode()).hexdigest()
 
 def get_cache_path(cache_key: str, processed: bool = False) -> str:
-    """Retourne le chemin fichier du cache"""
     suffix = "_processed.png" if processed else "_original.png"
     return os.path.join(CACHE_FOLDER, cache_key + suffix)
 
 # ==========================================
-# TÉLÉCHARGEMENT ET TRAITEMENT D'IMAGES
+# TÉLÉCHARGEMENT D'IMAGES (SANS REMBG)
 # ==========================================
 def download_image_from_url(url: str) -> Image.Image:
     """Télécharge une image depuis une URL"""
@@ -118,12 +113,8 @@ def download_image_from_url(url: str) -> Image.Image:
 
 def load_and_process_cloth(url: str, force_reprocess: bool = False) -> np.ndarray:
     """
-    Charge et traite une image de vêtement
-    1. Vérifie le cache mémoire
-    2. Vérifie le cache disque
-    3. Télécharge depuis Cloudinary
-    4. Applique rembg
-    5. Met en cache
+    ✅ VERSION DÉMO : Charge l'image SANS rembg
+    L'image DOIT avoir un fond transparent (processedImageURL)
     """
     cache_key = get_cache_key(url)
     
@@ -132,7 +123,7 @@ def load_and_process_cloth(url: str, force_reprocess: bool = False) -> np.ndarra
         logger.debug(f"✓ Image {cache_key[:8]} depuis cache RAM")
         return image_cache[cache_key]
     
-    # 2. Cache disque (image déjà traitée)
+    # 2. Cache disque
     processed_path = get_cache_path(cache_key, processed=True)
     if os.path.exists(processed_path) and not force_reprocess:
         logger.debug(f"✓ Image {cache_key[:8]} depuis cache disque")
@@ -140,28 +131,28 @@ def load_and_process_cloth(url: str, force_reprocess: bool = False) -> np.ndarra
         arr = np.array(img)
         result = cv2.cvtColor(arr, cv2.COLOR_RGBA2BGRA)
         
-        # Stocker en RAM (avec limite)
         if len(image_cache) < MAX_CACHE_SIZE:
             image_cache[cache_key] = result
         
         return result
     
-    # 3. Télécharger et traiter
-    logger.info(f"⬇️  Téléchargement et traitement de {url[:50]}...")
+    # 3. Télécharger SANS traiter
+    logger.info(f"⬇️  Téléchargement de {url[:50]}...")
     img = download_image_from_url(url)
     
-    # Appliquer rembg
-    img_no_bg = remove(img)
+    # ✅ IMPORTANT : Convertir en RGBA sans rembg
+    # On suppose que l'image a DÉJÀ un fond transparent
+    img_rgba = img.convert("RGBA")
     
-    # Sauvegarder en cache disque
-    img_no_bg.save(processed_path)
+    # Sauvegarder
+    img_rgba.save(processed_path)
     logger.info(f"💾 Image sauvegardée: {processed_path}")
     
-    # Convertir en numpy pour OpenCV
-    arr = np.array(img_no_bg)
+    # Convertir pour OpenCV
+    arr = np.array(img_rgba)
     result = cv2.cvtColor(arr, cv2.COLOR_RGBA2BGRA)
     
-    # Stocker en RAM
+    # Cache RAM
     if len(image_cache) < MAX_CACHE_SIZE:
         image_cache[cache_key] = result
     
@@ -206,13 +197,13 @@ def overlay_transparent(background, overlay, x, y, overlay_w, overlay_h):
 # MODÈLES DE DONNÉES
 # ==========================================
 class ClothingItem(BaseModel):
-    imageURL: str  # URL Cloudinary originale
-    processedImageURL: Optional[str] = None  # URL Cloudinary traitée (si existe)
-    category: str  # "Top", "Bottom", "Footwear", etc.
+    imageURL: str
+    processedImageURL: Optional[str] = None
+    category: str
 
 class ProcessFrameRequest(BaseModel):
-    frame: str  # Base64 encoded
-    clothes: List[ClothingItem]  # Liste des vêtements à appliquer
+    frame: str
+    clothes: List[ClothingItem]
 
 class ProcessClothingRequest(BaseModel):
     imageURL: str
@@ -240,42 +231,23 @@ def health_check():
 @app.post("/process-clothing")
 async def process_clothing(body: ProcessClothingRequest):
     """
-    Traite une image de vêtement (enlève le fond)
-    et l'upload sur Cloudinary
-    
-    Appelé automatiquement par NestJS après l'upload d'un vêtement
+    ⚠️  VERSION DÉMO : rembg désactivé
+    Retourne l'URL originale comme processedImageURL
     """
     try:
-        logger.info(f"🔄 Traitement de {body.imageURL} ({body.category})")
+        logger.info(f"⚠️  DÉMO MODE : rembg désactivé")
+        logger.info(f"📥 Requête pour {body.imageURL} ({body.category})")
         
-        # Télécharger et enlever le fond
-        img = download_image_from_url(body.imageURL)
-        img_no_bg = remove(img)
-        
-        # Convertir en bytes pour upload
-        buffer = BytesIO()
-        img_no_bg.save(buffer, format='PNG')
-        buffer.seek(0)
-        
-        # Upload sur Cloudinary dans un dossier séparé
-        upload_result = cloudinary.uploader.upload(
-            buffer,
-            folder="labasni/processed",
-            resource_type="image",
-            format="png"
-        )
-        
-        processed_url = upload_result['secure_url']
-        logger.info(f"✅ Image traitée uploadée: {processed_url}")
-        
+        # Pour la démo, on retourne juste l'URL originale
         return {
             "success": True,
-            "processedImageURL": processed_url,
-            "originalURL": body.imageURL
+            "processedImageURL": body.imageURL,  # Même URL
+            "originalURL": body.imageURL,
+            "note": "rembg désactivé en mode démo"
         }
         
     except Exception as e:
-        logger.error(f"❌ Erreur traitement: {str(e)}")
+        logger.error(f"❌ Erreur: {str(e)}")
         return {
             "success": False,
             "error": str(e)
@@ -285,21 +257,36 @@ async def process_clothing(body: ProcessClothingRequest):
 def process_frame(body: ProcessFrameRequest):
     """
     Traite une frame vidéo et applique les vêtements virtuels
+    ✅ VERSION AVEC LOGS DÉTAILLÉS
     """
+    start_time = time.time()
+    
     try:
-        # Décodage de la frame
+        logger.info(f"📥 Requête reçue: {len(body.clothes)} vêtement(s)")
+        for cloth in body.clothes:
+            logger.info(f"  - {cloth.category}: {cloth.imageURL[:50]}...")
+            if cloth.processedImageURL:
+                logger.info(f"    Processed: {cloth.processedImageURL[:50]}...")
+        
+        # ✅ CHECKPOINT 1 : Décodage
+        logger.info("⏱️  Décodage frame...")
         img_data = base64.b64decode(body.frame)
         nparr = np.frombuffer(img_data, np.uint8)
         frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         
         if frame is None:
             raise HTTPException(status_code=400, detail="Image invalide")
+        
+        logger.info(f"✅ Frame décodée: {frame.shape} ({time.time() - start_time:.2f}s)")
 
-        # Détection de pose
+        # ✅ CHECKPOINT 2 : MediaPipe
+        logger.info("⏱️  Détection pose MediaPipe...")
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         results = pose.process(rgb)
+        logger.info(f"✅ Pose traitée ({time.time() - start_time:.2f}s)")
 
         if not results.pose_landmarks:
+            logger.warning("⚠️  Aucun corps détecté")
             _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
             encoded = base64.b64encode(buffer).decode('utf-8')
             return {
@@ -311,29 +298,35 @@ def process_frame(body: ProcessFrameRequest):
         lm = results.pose_landmarks.landmark
         h_frame, w_frame = frame.shape[:2]
         
-        # Charger les vêtements (utilise processedImageURL si disponible)
+        # ✅ CHECKPOINT 3 : Chargement vêtements
+        logger.info(f"⏱️  Chargement de {len(body.clothes)} vêtement(s)...")
         wardrobe = {}
+        
         for cloth in body.clothes:
             category_lower = cloth.category.lower()
             
-            # Priorité à l'image traitée
+            # ✅ IMPORTANT : Priorité à processedImageURL
             url_to_use = cloth.processedImageURL if cloth.processedImageURL else cloth.imageURL
             
             try:
+                logger.info(f"  📦 Chargement {category_lower}: {url_to_use[:50]}...")
                 cloth_img = load_and_process_cloth(url_to_use)
                 wardrobe[category_lower] = cloth_img
+                logger.info(f"  ✓ {category_lower} chargé")
             except Exception as e:
-                logger.warning(f"Impossible de charger {url_to_use}: {e}")
+                logger.warning(f"  ✗ Impossible de charger {url_to_use}: {e}")
                 continue
+        
+        logger.info(f"✅ {len(wardrobe)} vêtement(s) chargé(s) ({time.time() - start_time:.2f}s)")
 
-        # Application des vêtements
+        # ✅ CHECKPOINT 4 : Application
+        logger.info("⏱️  Application des vêtements...")
         for category in DRAW_ORDER:
             if category not in wardrobe:
                 continue
             
             cloth_img = wardrobe[category]
             
-            # Sélection des points d'ancrage
             if category == "top" or category == "outerwear":
                 p1 = lm[mp_pose.PoseLandmark.LEFT_SHOULDER]
                 p2 = lm[mp_pose.PoseLandmark.RIGHT_SHOULDER]
@@ -368,10 +361,16 @@ def process_frame(body: ProcessFrameRequest):
                 pos_y = center_y + int(cloth_h * OFFSET_Y.get(category, 0))
                 
                 frame = overlay_transparent(frame, cloth_img, pos_x, pos_y, cloth_w, cloth_h)
+        
+        logger.info(f"✅ Vêtements appliqués ({time.time() - start_time:.2f}s)")
 
         # Encodage
+        logger.info("⏱️  Encodage résultat...")
         _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
         encoded = base64.b64encode(buffer).decode('utf-8')
+        
+        total_time = time.time() - start_time
+        logger.info(f"✅ SUCCÈS - Temps total: {total_time:.2f}s")
         
         return {
             "success": True,
@@ -380,7 +379,9 @@ def process_frame(body: ProcessFrameRequest):
         }
 
     except Exception as e:
-        logger.error(f"Erreur traitement: {str(e)}")
+        logger.error(f"❌ Erreur traitement: {str(e)}")
+        import traceback
+        logger.error(f"Stack trace: {traceback.format_exc()}")
         return {
             "success": False,
             "error": str(e)
@@ -388,7 +389,7 @@ def process_frame(body: ProcessFrameRequest):
 
 @app.post("/clear-cache")
 def clear_cache():
-    """Vide le cache (RAM + disque)"""
+    """Vide le cache"""
     global image_cache
     image_cache = {}
     
@@ -403,7 +404,8 @@ def clear_cache():
 # DÉMARRAGE
 # ==========================================
 if __name__ == "__main__":
-    logger.info("🚀 Démarrage du service VTO v2.0 sur le port 5001...")
+    logger.info("🚀 Démarrage du service VTO v2.0-DEMO sur le port 5001...")
+    logger.info("⚠️  Mode DÉMO : rembg désactivé, utilise processedImageURL uniquement")
     uvicorn.run(
         "main:app",
         host="0.0.0.0",

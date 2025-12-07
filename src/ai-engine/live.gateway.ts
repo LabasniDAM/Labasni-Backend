@@ -18,9 +18,11 @@ interface AuthenticatedSocket extends Socket {
   userId?: string;
 }
 
+// ✅ Support des deux formats
 interface ProcessFramePayload {
-  frame: string; // Base64 JPEG
-  clothingIds: string[]; // IDs MongoDB des vêtements sélectionnés
+  frame: string;
+  clothingIds?: string[];  // Ancien format (pour compatibilité)
+  clothes?: ClothingItem[];  // Nouveau format (direct)
 }
 
 interface ClothingItem {
@@ -31,7 +33,7 @@ interface ClothingItem {
 
 @WebSocketGateway({
   cors: {
-    origin: '*', // ⚠️ En production, restreindre à ton domaine
+    origin: '*',
     credentials: true,
   },
   namespace: '/vto',
@@ -49,16 +51,25 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly jwtService: JwtService,
   ) {}
 
-  // ==========================================
-  // AUTHENTIFICATION
-  // ==========================================
-  
   async handleConnection(client: AuthenticatedSocket) {
     try {
-      // Extraire le token JWT depuis les query params ou headers
-      const token = 
-        client.handshake.auth?.token || 
-        client.handshake.headers?.authorization?.replace('Bearer ', '');
+      let token: string | undefined;
+
+      // Vérifier 3 sources pour le token
+      if (client.handshake.query?.token) {
+        token = Array.isArray(client.handshake.query.token)
+          ? client.handshake.query.token[0]
+          : client.handshake.query.token;
+        this.logger.debug('✅ Token trouvé dans handshake.query');
+      }
+      else if (client.handshake.headers?.authorization) {
+        token = client.handshake.headers.authorization.replace('Bearer ', '');
+        this.logger.debug('✅ Token trouvé dans headers.authorization');
+      }
+      else if (client.handshake.auth?.token) {
+        token = client.handshake.auth.token;
+        this.logger.debug('✅ Token trouvé dans handshake.auth');
+      }
 
       if (!token) {
         this.logger.warn(`❌ Connexion VTO refusée: pas de token`);
@@ -75,23 +86,21 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const userId = decoded.id || decoded.sub;
 
       if (!userId) {
-        throw new UnauthorizedException('Token invalide');
+        throw new UnauthorizedException('Token invalide - pas d\'userId');
       }
 
-      // Stocker l'userId dans le socket
       client.userId = userId;
 
-      // Enregistrer la connexion
       this.activeConnections.set(client.id, {
         userId,
         connectedAt: Date.now(),
       });
 
       this.logger.log(
-        `🔌 Client VTO connecté: ${client.id} (User: ${userId}) - Total: ${this.activeConnections.size}`,
+        `✅ Client VTO authentifié: ${client.id} (User: ${userId}) - Total: ${this.activeConnections.size}`,
       );
 
-      // Vérifier que le service Python est disponible
+      // Vérifier service Python
       if (!this.aiService.getHealthStatus()) {
         client.emit('error', {
           message: 'Service VTO temporairement indisponible',
@@ -105,10 +114,11 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
         });
       }
     } catch (error) {
-      this.logger.error(`Erreur authentification VTO: ${error.message}`);
+      this.logger.error(`❌ Erreur authentification VTO: ${error.message}`);
       client.emit('error', {
         message: 'Authentification échouée',
         code: 'AUTH_FAILED',
+        details: error.message,
       });
       client.disconnect();
     }
@@ -126,13 +136,6 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  // ==========================================
-  // ÉVÉNEMENTS WEBSOCKET
-  // ==========================================
-
-  /**
-   * Événement principal: traiter une frame avec les vêtements de l'utilisateur
-   */
   @SubscribeMessage('process_frame')
   async handleProcessFrame(
     @ConnectedSocket() client: AuthenticatedSocket,
@@ -149,7 +152,6 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
         return;
       }
 
-      // Validation
       if (!payload.frame) {
         client.emit('frame_error', {
           error: 'Frame manquante',
@@ -158,8 +160,39 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
         return;
       }
 
-      if (!payload.clothingIds || payload.clothingIds.length === 0) {
-        // Pas de vêtements sélectionnés → renvoyer la frame originale
+      let clothingItems: ClothingItem[] = [];
+
+      // ✅ CAS 1 : Format moderne (clothes directement fourni)
+      if (payload.clothes && payload.clothes.length > 0) {
+        this.logger.debug(`📥 Format moderne: ${payload.clothes.length} vêtement(s) reçus directement`);
+        clothingItems = payload.clothes;
+      }
+      // ✅ CAS 2 : Ancien format (clothingIds à résoudre)
+      else if (payload.clothingIds && payload.clothingIds.length > 0) {
+        this.logger.debug(`📥 Ancien format: ${payload.clothingIds.length} ID(s) à résoudre`);
+        
+        const clothes = await this.clothesService.findManyByIds(
+          payload.clothingIds,
+          client.userId,
+        );
+
+        if (clothes.length === 0) {
+          client.emit('frame_error', {
+            error: 'Aucun vêtement valide trouvé pour ces IDs',
+            code: 'NO_CLOTHES_FOUND',
+          });
+          return;
+        }
+
+        clothingItems = clothes.map((cloth) => ({
+          imageURL: cloth.imageURL,
+          processedImageURL: cloth.processedImageURL || undefined,
+          category: cloth.category,
+        }));
+      }
+      // ✅ CAS 3 : Aucun vêtement
+      else {
+        this.logger.debug('📥 Aucun vêtement sélectionné - retour frame brute');
         client.emit('frame_processed', {
           frame: payload.frame,
           processingTime: Date.now() - startTime,
@@ -169,28 +202,12 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
         return;
       }
 
-      // Récupérer les vêtements depuis MongoDB
-      const clothes = await this.clothesService.findManyByIds(
-        payload.clothingIds,
-        client.userId,
-      );
-
-      if (clothes.length === 0) {
-        client.emit('frame_error', {
-          error: 'Aucun vêtement valide trouvé',
-          code: 'NO_CLOTHES_FOUND',
-        });
-        return;
+      // ✅ Appel au service Python
+      this.logger.debug(`📤 Envoi à Python: ${clothingItems.length} vêtement(s)`);
+      for (const item of clothingItems) {
+        this.logger.debug(`  - ${item.category}: ${item.processedImageURL ? 'processed' : 'original'}`);
       }
 
-      // Préparer les données pour Python
-      const clothingItems: ClothingItem[] = clothes.map((cloth) => ({
-        imageURL: cloth.imageURL,
-        processedImageURL: cloth.processedImageURL || undefined,
-        category: cloth.category,
-      }));
-
-      // Appel au service Python
       const result = await this.aiService.processFrameWithClothes(
         payload.frame,
         clothingItems,
@@ -205,20 +222,24 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
           fps: Math.round(1000 / processingTime),
         });
 
-        // Log si lent
-        if (processingTime > 300) {
+        this.logger.debug(`✅ Frame traitée en ${processingTime}ms`);
+
+        if (processingTime > 500) {
           this.logger.warn(
-            `⚠️  Traitement lent: ${processingTime}ms pour user ${client.userId}`,
+            `⚠️ Traitement lent: ${processingTime}ms pour user ${client.userId}`,
           );
         }
       } else {
+        this.logger.error(`❌ Erreur Python: ${result.error}`);
         client.emit('frame_error', {
-          error: result.error || 'Erreur inconnue',
+          error: result.error || 'Erreur traitement Python',
           code: 'PROCESSING_FAILED',
         });
       }
     } catch (error) {
-      this.logger.error(`Erreur traitement frame: ${error.message}`);
+      this.logger.error(`❌ Erreur traitement frame: ${error.message}`);
+      this.logger.error(`Stack: ${error.stack}`);
+      
       client.emit('frame_error', {
         error: 'Erreur serveur',
         code: 'INTERNAL_ERROR',
@@ -227,9 +248,6 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  /**
-   * Événement: tester la connexion (ping/pong)
-   */
   @SubscribeMessage('ping')
   handlePing(@ConnectedSocket() client: AuthenticatedSocket) {
     const connectionData = this.activeConnections.get(client.id);
@@ -245,9 +263,6 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
     });
   }
 
-  /**
-   * Événement: obtenir les stats de connexion
-   */
   @SubscribeMessage('get_stats')
   handleGetStats(@ConnectedSocket() client: AuthenticatedSocket) {
     const connectionData = this.activeConnections.get(client.id);
@@ -261,27 +276,10 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
     });
   }
 
-  // ==========================================
-  // MÉTHODES UTILITAIRES
-  // ==========================================
-
-  /**
-   * Envoie un message à tous les clients connectés
-   */
-  broadcastMessage(event: string, data: any) {
-    this.server.emit(event, data);
-  }
-
-  /**
-   * Nombre de clients actuellement connectés
-   */
   getActiveConnectionsCount(): number {
     return this.activeConnections.size;
   }
 
-  /**
-   * Déconnecte tous les clients (pour maintenance)
-   */
   disconnectAll(reason: string) {
     this.logger.warn(`🔌 Déconnexion de tous les clients VTO: ${reason}`);
     this.server.emit('maintenance', {

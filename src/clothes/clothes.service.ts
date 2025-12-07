@@ -582,4 +582,44 @@ export class ClothesService {
       return rejectRatio > 0.6;
     });
   }
+  /**
+ * Obtenir les statistiques de traitement VTO
+ */
+async getVTOProcessingStats(userId: string) {
+  if (!Types.ObjectId.isValid(userId)) {
+    throw new ForbiddenException('Invalid user ID format');
+  }
+
+  const userObjectId = new Types.ObjectId(userId);
+
+  const [pending, processing, ready, failed] = await Promise.all([
+    this.clothesModel.countDocuments({ 
+      userId: userObjectId, 
+      processingStatus: 'pending' 
+    }),
+    this.clothesModel.countDocuments({ 
+      userId: userObjectId, 
+      processingStatus: 'processing' 
+    }),
+    this.clothesModel.countDocuments({ 
+      userId: userObjectId, 
+      processingStatus: 'ready' 
+    }),
+    this.clothesModel.countDocuments({ 
+      userId: userObjectId, 
+      processingStatus: 'failed' 
+    })
+  ]);
+
+  const total = pending + processing + ready + failed;
+
+  return {
+    total,
+    pending,
+    processing,
+    ready,
+    failed,
+    percentReady: total > 0 ? Math.round((ready / total) * 100) : 0
+  };
+}
 }
