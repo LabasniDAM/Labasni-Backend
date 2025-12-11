@@ -1,0 +1,34 @@
+# Configuration Render pour Labasni Backend
+# Alternative à Dockerfile si vous préférez utiliser les build scripts natifs de Render
+
+services:
+  - type: web
+    name: labasni-backend
+    env: docker
+    # Utilise le Dockerfile à la racine
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    
+    # Variables d'environnement (à configurer dans le dashboard Render)
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: AI_SERVICE_URL
+        value: http://localhost:5001
+      # Ajoutez vos autres variables d'environnement ici
+      # - key: MONGODB_URI
+      #   sync: false
+      # - key: JWT_SECRET
+      #   sync: false
+      # - key: CLOUDINARY_CLOUD_NAME
+      #   sync: false
+      # etc.
+
+    # Health check
+    healthCheckPath: /health
+    
+    # Plan (ajustez selon vos besoins)
+    plan: starter  # ou standard, pro, etc.
+

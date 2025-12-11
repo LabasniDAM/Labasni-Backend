@@ -1,0 +1,65 @@
+# Node.js
+node_modules
+npm-debug.log
+dist
+.npm
+.eslintcache
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info
+.pytest_cache
+*.egg
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+logs
+*.log.*
+
+# Temporary files
+temp_uploads
+cache_images
+*.tmp
+*.temp
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+build
+*.map
+coverage
+.nyc_output
+
+# Documentation
+*.md
+!README.md
+
+# Test files
+test
+*.spec.ts
+*.test.ts
+*.e2e-spec.ts
+
