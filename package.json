@@ -20,9 +20,6 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     
-    "postinstall": "npm run install:python || echo '⚠️  Python deps installation skipped (normal in Docker)'",
-    "install:python": "bash scripts/install-python-deps.sh",
-    
     "test:python": "python3 -c 'import numpy, torch, tensorflow; print(\"✅ Python modules OK\")'",
     "test:python:full": "python3 -c 'import numpy, pandas, torch, tensorflow, cv2, mediapipe; print(\"✅ All Python modules installed\")'",
     "test:recommender": "python3 AI-Models/recommender_v_finale.py --preference casual --city Tunis --temperature 20",

@@ -1,34 +1,64 @@
-# Configuration Render pour Labasni Backend
-# Alternative à Dockerfile si vous préférez utiliser les build scripts natifs de Render
+# ====================================
+# CONFIGURATION RENDER.COM - DOCKER
+# ====================================
+# Ce fichier configure Render pour utiliser Docker
+# Toutes les dépendances Python sont gérées dans le Dockerfile
 
 services:
   - type: web
     name: labasni-backend
-    env: docker
-    # Utilise le Dockerfile à la racine
-    dockerfilePath: ./Dockerfile
-    dockerContext: .
+    env: docker  # ✅ Utilise Docker au lieu de Node.js natif
+    region: oregon  # Changez selon votre région
     
-    # Variables d'environnement (à configurer dans le dashboard Render)
+    # ✅ Build Command : VIDE - Docker gère tout
+    # Render utilisera automatiquement le Dockerfile à la racine
+    # Pas besoin de buildCommand car Docker fait tout
+    
+    # ✅ Start Command : VIDE - Dockerfile définit ENTRYPOINT
+    # Le docker-entrypoint.sh démarre automatiquement les deux services
+    
+    # ✅ Variables d'environnement (à configurer dans Render Dashboard)
     envVars:
       - key: NODE_ENV
         value: production
+      
       - key: PORT
         value: 3000
+      
       - key: AI_SERVICE_URL
         value: http://localhost:5001
-      # Ajoutez vos autres variables d'environnement ici
-      # - key: MONGODB_URI
-      #   sync: false
-      # - key: JWT_SECRET
-      #   sync: false
-      # - key: CLOUDINARY_CLOUD_NAME
-      #   sync: false
-      # etc.
-
-    # Health check
+      
+      # Variables à définir manuellement dans Render Dashboard :
+      # - MONGODB_URI
+      # - JWT_SECRET
+      # - JWT_EXPIRES_IN
+      # - JWT_REFRESH_EXPIRES_IN
+      # - GOOGLE_CLIENT_ID
+      # - GOOGLE_CLIENT_SECRET
+      # - GOOGLE_CALLBACK_URL
+      # - EMAIL_HOST
+      # - EMAIL_PORT
+      # - EMAIL_USER
+      # - EMAIL_PASS
+      # - EMAIL_FROM
+      # - TWILIO_ACCOUNT_SID
+      # - TWILIO_AUTH_TOKEN
+      # - TWILIO_PHONE_NUMBER
+      # - CLOUDINARY_CLOUD_NAME
+      # - CLOUDINARY_API_KEY
+      # - CLOUDINARY_API_SECRET
+      # - STRIPE_SECRET_KEY
+      # - STRIPE_WEBHOOK_SECRET
+      # - FRONTEND_URL
+      # - OPENWEATHER_API_KEY
+      # - REMOVE_BG_API_KEY
+      # - GEMINI_API_KEY
+    
+    # ✅ Health Check
     healthCheckPath: /health
     
-    # Plan (ajustez selon vos besoins)
+    # ✅ Auto-deploy
+    autoDeploy: true
+    
+    # ✅ Plan (ajustez selon vos besoins)
     plan: starter  # ou standard, pro, etc.
-
