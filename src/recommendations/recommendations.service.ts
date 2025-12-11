@@ -12,6 +12,7 @@ import { spawn } from 'child_process';
 import { join } from 'path';
 import * as fs from 'fs';
 import axios from 'axios';
+import { findPythonExecutable, executePythonScript as executePython } from '../common/python-executor';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service'; // ✨ NOUVEAU
 
 @Injectable()
@@ -485,53 +486,13 @@ export class RecommendationsService {
     };
   }
 
-  private executePythonScript(
+  private async executePythonScript(
     args: string[],
     inputData: string,
     timeout: number,
   ): Promise<{ stdout: string; stderr: string }> {
-    return new Promise((resolve, reject) => {
-      const aiModelsDir = join(process.cwd(), 'AI-Models');
-      const pythonProcess = spawn('python3', args, {
-        cwd: aiModelsDir,
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
-
-      let stdout = '';
-      let stderr = '';
-
-      pythonProcess.stdin.write(inputData);
-      pythonProcess.stdin.end();
-
-      pythonProcess.stdout.on('data', (data) => {
-        stdout += data.toString();
-      });
-
-      pythonProcess.stderr.on('data', (data) => {
-        stderr += data.toString();
-      });
-
-      pythonProcess.on('close', (code) => {
-        if (code !== 0 && !stdout.includes('success')) {
-          reject(new Error(`Script Python terminé avec le code ${code}. stderr: ${stderr}`));
-        } else {
-          resolve({ stdout, stderr });
-        }
-      });
-
-      pythonProcess.on('error', (error) => {
-        reject(new Error(`Erreur lors du lancement du script Python: ${error.message}`));
-      });
-
-      const timeoutId = setTimeout(() => {
-        pythonProcess.kill('SIGTERM');
-        reject(new Error(`Timeout: Le script Python a pris plus de ${timeout / 1000} secondes à s'exécuter`));
-      }, timeout);
-
-      pythonProcess.on('close', () => {
-        clearTimeout(timeoutId);
-      });
-    });
+    const scriptPath = join(process.cwd(), 'AI-Models', 'recommender_v_finale.py');
+    return executePython(scriptPath, args, inputData, timeout);
   }
 
   private parsePythonOutput(output: string): any {

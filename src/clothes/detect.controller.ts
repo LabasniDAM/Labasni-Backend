@@ -13,6 +13,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { v2 as cloudinary } from 'cloudinary';
 import * as fs from 'fs';
+import { executePythonCommand, findPythonExecutable } from '../common/python-executor';
 
 const execAsync = promisify(exec);
 
@@ -52,8 +53,16 @@ export class DetectController {
       const noBgPathAbs = join(process.cwd(), noBgPath);
       
       try {
+        const pythonExec = await findPythonExecutable();
         const { stdout, stderr } = await execAsync(
-          `python3 "${removeBgScriptPath}" --input "${tempPathAbs}" --output "${noBgPathAbs}"`,
+          `"${pythonExec}" "${removeBgScriptPath}" --input "${tempPathAbs}" --output "${noBgPathAbs}"`,
+          {
+            env: {
+              ...process.env,
+              PYTHONUNBUFFERED: '1',
+              PYTHONPATH: join(process.cwd(), 'AI-Models'),
+            },
+          },
         );
         
         console.log('✅ Background supprimé:', noBgPath);
@@ -84,8 +93,18 @@ export class DetectController {
       console.log('🤖 Détection IA...');
       const detectScriptPath = join(process.cwd(), 'AI-Models', 'detect.py');
       const aiModelsDir = join(process.cwd(), 'AI-Models');
+      
+      // Utiliser le Python avec TensorFlow disponible
+      const pythonExec = await findPythonExecutable();
       const { stdout: detectionOutput } = await execAsync(
-        `cd "${aiModelsDir}" && python3 detect.py --image "${tempPathAbs}"`,
+        `cd "${aiModelsDir}" && "${pythonExec}" detect.py --image "${tempPathAbs}"`,
+        {
+          env: {
+            ...process.env,
+            PYTHONUNBUFFERED: '1',
+            PYTHONPATH: join(process.cwd(), 'AI-Models'),
+          },
+        },
       );
       console.log('✅ Détection terminée');
 
