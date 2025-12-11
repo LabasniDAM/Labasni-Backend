@@ -1,11 +1,12 @@
 {
   "name": "back-end-labasni",
-  "version": "0.0.1",
-  "description": "",
-  "author": "",
+  "version": "1.0.0",
+  "description": "Backend Labasni - Fashion E-commerce with AI/ML",
+  "author": "Labasni Team",
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
+    "prebuild": "rimraf dist",
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "node dist/main.js",
@@ -17,8 +18,19 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
-
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    
+    "postinstall": "npm run install:python || echo '⚠️  Python deps installation skipped (normal in Docker)'",
+    "install:python": "bash scripts/install-python-deps.sh",
+    
+    "test:python": "python3 -c 'import numpy, torch, tensorflow; print(\"✅ Python modules OK\")'",
+    "test:python:full": "python3 -c 'import numpy, pandas, torch, tensorflow, cv2, mediapipe; print(\"✅ All Python modules installed\")'",
+    "test:recommender": "python3 AI-Models/recommender_v_finale.py --preference casual --city Tunis --temperature 20",
+    "test:vto": "curl -X GET http://localhost:5001/health || echo '⚠️  VTO service not running'",
+    
+    "python:install": "pip3 install -r AI-Models/requirements.txt && pip3 install -r src/python-vto-service/requirements.txt",
+    "python:check": "python3 --version && pip3 --version",
+    "python:list": "pip3 list | grep -E '(numpy|torch|tensorflow|opencv|mediapipe)'"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
@@ -86,6 +98,7 @@
     "globals": "^16.0.0",
     "jest": "^30.0.0",
     "prettier": "^3.4.2",
+    "rimraf": "^5.0.10",
     "source-map-support": "^0.5.21",
     "supertest": "^7.0.0",
     "ts-jest": "^29.2.5",
@@ -111,5 +124,9 @@
     ],
     "coverageDirectory": "../coverage",
     "testEnvironment": "node"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
   }
 }
