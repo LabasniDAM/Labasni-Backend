@@ -30,6 +30,18 @@ fi
 PYTHON_VERSION=$(python3 --version)
 echo "✅ $PYTHON_VERSION détecté"
 
+# Vérifier que ce n'est pas Python 3.13+ (incompatible)
+PYTHON_MAJOR=$(python3 -c 'import sys; print(sys.version_info.major)')
+PYTHON_MINOR=$(python3 -c 'import sys; print(sys.version_info.minor)')
+
+if [ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -ge 13 ]; then
+    echo "❌ ERREUR: Python 3.13+ n'est pas compatible avec les packages ML"
+    echo "⚠️  Créez un fichier .python-version avec '3.11.9' à la racine"
+    exit 1
+fi
+
+echo "✅ Version Python compatible ($PYTHON_MAJOR.$PYTHON_MINOR)"
+
 # Upgrade pip
 echo "📦 Mise à jour de pip..."
 python3 -m pip install --upgrade pip setuptools wheel

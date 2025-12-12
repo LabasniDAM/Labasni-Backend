@@ -1,60 +1,60 @@
 # ============================================
 # REQUIREMENTS.TXT CONSOLIDÉ - LABASNI BACKEND
 # ============================================
-# À placer à la RACINE du projet
-# Compatible avec Python 3.11+ et Render
+# Compatible Python 3.11 (3.11.9 recommandé)
+# Optimisé pour Render (CPU uniquement)
 
 # ============================================
 # CORE ML / CV LIBRARIES
 # ============================================
-numpy==1.24.3
-scikit-learn==1.3.2
-Pillow==10.0.0
+numpy==1.26.4
+scikit-learn==1.4.2
+Pillow==10.3.0
 
 # ============================================
-# PYTORCH (CPU ONLY - pour Render)
+# PYTORCH (CPU ONLY)
 # ============================================
-# Note: Render installera automatiquement la version CPU
-torch==2.1.0
-torchvision==0.16.0
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.2.2+cpu
+torchvision==0.17.2+cpu
 
 # ============================================
-# TENSORFLOW (CPU ONLY - pour Render)
+# TENSORFLOW (CPU ONLY)
 # ============================================
 tensorflow-cpu==2.15.0
 
 # ============================================
 # COMPUTER VISION
 # ============================================
-opencv-python-headless==4.8.1.78
-mediapipe==0.10.8
-ultralytics==8.0.227
+opencv-python-headless==4.9.0.80
+mediapipe==0.10.11
+ultralytics==8.1.47
 
 # ============================================
 # FASTAPI & WEB SERVICE
 # ============================================
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-python-multipart==0.0.6
-pydantic==2.5.0
+fastapi==0.110.2
+uvicorn[standard]==0.29.0
+python-multipart==0.0.9
+pydantic==2.7.1
 
 # ============================================
 # IMAGE PROCESSING
 # ============================================
-rembg==2.0.50
+rembg==2.0.56
 colormath==3.0.0
 
 # ============================================
 # UTILITIES
 # ============================================
 requests==2.31.0
-python-dotenv==1.0.0
-cloudinary==1.36.0
+python-dotenv==1.0.1
+cloudinary==1.40.0
 
 # ============================================
-# NOTES IMPORTANTES
+# NOTES
 # ============================================
-# 1. Cette configuration est optimisée pour Render (CPU uniquement)
-# 2. Les versions sont fixées pour assurer la compatibilité
-# 3. Pour GPU, remplacer tensorflow-cpu par tensorflow
-# 4. Pour GPU, utiliser torch avec CUDA dans l'index URL
+# 1. Nécessite Python 3.11 (créer .python-version avec "3.11.9")
+# 2. Versions mises à jour pour compatibilité Python 3.11
+# 3. PyTorch CPU via index URL pour réduire taille
+# 4. TensorFlow 2.15.0 est la dernière version stable pour Python 3.11
