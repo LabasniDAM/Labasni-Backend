@@ -19,12 +19,10 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    
     "test:python": "python3 -c 'import numpy, torch, tensorflow; print(\"✅ Python modules OK\")'",
     "test:python:full": "python3 -c 'import numpy, pandas, torch, tensorflow, cv2, mediapipe; print(\"✅ All Python modules installed\")'",
     "test:recommender": "python3 AI-Models/recommender_v_finale.py --preference casual --city Tunis --temperature 20",
     "test:vto": "curl -X GET http://localhost:5001/health || echo '⚠️  VTO service not running'",
-    
     "python:install": "pip3 install -r AI-Models/requirements.txt && pip3 install -r src/python-vto-service/requirements.txt",
     "python:check": "python3 --version && pip3 --version",
     "python:list": "pip3 list | grep -E '(numpy|torch|tensorflow|opencv|mediapipe)'"

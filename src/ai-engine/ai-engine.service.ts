@@ -1,68 +1,57 @@
-// src/ai-engine/ai-engine.service.ts
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import axios, { AxiosInstance } from 'axios';
+import { Injectable, Logger, HttpException, HttpStatus } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { HttpService } from '@nestjs/axios';
+import { firstValueFrom } from 'rxjs';
 
 interface ProcessFrameResponse {
   success: boolean;
-  frame?: string; // Base64 encoded result
+  frame?: string;
   error?: string;
-  fps_hint?: string;
 }
 
 @Injectable()
-export class AIEngineService implements OnModuleInit {
+export class AIEngineService {
   private readonly logger = new Logger(AIEngineService.name);
-  private readonly client: AxiosInstance;
-  private readonly baseUrl: string;
+  private readonly hfVtoUrl: string;
   private isHealthy = false;
 
-  constructor() {
-    // URL du service Python (modifiable via variable d'environnement)
-    this.baseUrl = process.env.AI_SERVICE_URL || 'http://127.0.0.1:5001';
-    
-    this.client = axios.create({
-      baseURL: this.baseUrl,
-      timeout: 5000, // 5 secondes max pour éviter les blocages
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-  }
-
-  async onModuleInit() {
-    // Vérifier que le service Python est disponible au démarrage
-    await this.checkHealth();
+  constructor(
+    private readonly httpService: HttpService,
+    private readonly configService: ConfigService,
+  ) {
+    // Récupérer l'URL du Space VTO depuis .env
+    this.hfVtoUrl = this.configService.get<string>('HF_VTO_URL')!;    
+    if (!this.hfVtoUrl) {
+      this.logger.error('⚠️ HF_VTO_URL non configurée dans .env');
+    } else {
+      this.logger.log(`✅ Hugging Face VTO configuré : ${this.hfVtoUrl}`);
+      this.checkHealth(); // Vérifier au démarrage
+    }
   }
 
   /**
-   * Vérifie la santé du service Python
+   * Vérifie la santé du service VTO
    */
   async checkHealth(): Promise<boolean> {
     try {
-      const response = await this.client.get('/health', { timeout: 2000 });
+      const response = await firstValueFrom(
+        this.httpService.get(this.hfVtoUrl, { timeout: 5000 }),
+      );
       
-      if (response.data.status === 'ok') {
-        this.isHealthy = true;
-        this.logger.log(
-          `✅ Service Python VTO connecté (${response.data.cache_size} images en cache)`,
-        );
-        return true;
+      this.isHealthy = response.status === 200;
+      if (this.isHealthy) {
+        this.logger.log(`✅ Service VTO Hugging Face opérationnel`);
       }
-      
-      this.isHealthy = false;
-      return false;
+      return this.isHealthy;
     } catch (error) {
       this.isHealthy = false;
-      this.logger.warn(
-        `⚠️  Service Python VTO indisponible sur ${this.baseUrl}. Le VTO ne sera pas disponible.`,
-      );
+      this.logger.warn(`⚠️ Service VTO Hugging Face indisponible`);
       return false;
     }
   }
 
   /**
-   * Traite une frame avec une liste de vêtements (objets complets)
-   * Utilisé par le Gateway WebSocket
+   * Traite une frame avec Virtual Try-On via Hugging Face
    */
   async processFrameWithClothes(
     frameBase64: string,
@@ -72,36 +61,56 @@ export class AIEngineService implements OnModuleInit {
       category: string;
     }>,
   ): Promise<ProcessFrameResponse> {
-    if (!this.isHealthy) {
-      await this.checkHealth();
-      
-      if (!this.isHealthy) {
-        return {
-          success: false,
-          error: 'Service Python VTO non disponible',
-        };
-      }
+    if (!this.hfVtoUrl) {
+      return {
+        success: false,
+        error: 'HF_VTO_URL non configurée',
+      };
     }
 
     try {
-      const payload = {
-        frame: frameBase64,
-        clothes: clothes,
-      };
+      // Préparer les données pour Hugging Face
+      const clothesData = clothes.map(cloth => ({
+        imageURL: cloth.processedImageURL || cloth.imageURL,
+        category: cloth.category,
+      }));
 
-      const response = await this.client.post<ProcessFrameResponse>(
-        '/process-frame',
-        payload,
+      this.logger.debug(`📤 Envoi à HF VTO: ${clothesData.length} vêtement(s)`);
+
+      // Appeler le Space Hugging Face
+      const hfApiUrl = `${this.hfVtoUrl}/api/predict`;
+      
+      const response = await firstValueFrom(
+        this.httpService.post(hfApiUrl, {
+          data: [
+            frameBase64,                 // Argument 1 : frame en base64
+            JSON.stringify(clothesData), // Argument 2 : clothes JSON
+          ],
+        }, {
+          timeout: 10000, // 10 secondes max
+        }),
       );
 
-      return response.data;
-    } catch (error) {
-      this.logger.error(`Erreur traitement frame: ${error.message}`);
-      
-      if (error.code === 'ECONNABORTED' || error.code === 'ECONNREFUSED') {
-        this.isHealthy = false;
+      // Récupérer le résultat
+      const processedFrame = response.data?.data?.[0];
+
+      if (!processedFrame) {
+        throw new HttpException(
+          'Erreur de traitement VTO',
+          HttpStatus.INTERNAL_SERVER_ERROR,
+        );
       }
 
+      this.logger.debug(`✅ Frame traitée avec succès`);
+
+      return {
+        success: true,
+        frame: processedFrame, // Image en base64
+      };
+
+    } catch (error) {
+      this.logger.error(`❌ Erreur VTO: ${error.message}`);
+      
       return {
         success: false,
         error: error.message || 'Erreur inconnue',
@@ -110,23 +119,9 @@ export class AIEngineService implements OnModuleInit {
   }
 
   /**
-   * Retourne l'état du service Python
+   * Retourne l'état du service VTO
    */
   getHealthStatus(): boolean {
     return this.isHealthy;
-  }
-
-  /**
-   * Vide le cache du service Python
-   */
-  async clearCache(): Promise<boolean> {
-    try {
-      await this.client.post('/clear-cache');
-      this.logger.log('🗑️  Cache Python vidé');
-      return true;
-    } catch (error) {
-      this.logger.error(`Erreur vidage cache: ${error.message}`);
-      return false;
-    }
   }
 }

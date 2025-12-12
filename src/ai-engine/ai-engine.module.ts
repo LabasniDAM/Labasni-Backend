@@ -1,14 +1,13 @@
-// src/ai-engine/ai-engine.module.ts
-// ✅ SOLUTION FINALE : Utiliser la même constante JWT_SECRET que AuthModule
-
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { JwtModule } from '@nestjs/jwt';
+import { HttpModule } from '@nestjs/axios'; // ✅ NOUVEAU
+import { ConfigModule } from '@nestjs/config'; // ✅ NOUVEAU
 import { AIEngineService } from './ai-engine.service';
 import { LiveGateway } from './live.gateway';
 import { ClothesModule } from '../clothes/clothes.module';
 import { Clothes, ClothesSchema } from '../clothes/schemas/clothes.schema';
-import { JWT_SECRET } from '../auth/auth.constants'; // ✅ IMPORTER LA MÊME CONSTANTE
+import { JWT_SECRET } from '../auth/auth.constants';
 
 @Module({
   imports: [
@@ -16,11 +15,12 @@ import { JWT_SECRET } from '../auth/auth.constants'; // ✅ IMPORTER LA MÊME CO
       { name: Clothes.name, schema: ClothesSchema },
     ]),
     ClothesModule,
-    // ✅ CORRECTION : Utiliser EXACTEMENT le même secret que AuthModule
     JwtModule.register({
-      secret: JWT_SECRET,  // ← Même valeur que JwtStrategy
+      secret: JWT_SECRET,
       signOptions: { expiresIn: '7d' },
     }),
+    HttpModule, // ✅ NOUVEAU : Pour appeler Hugging Face
+    ConfigModule, // ✅ NOUVEAU : Pour accéder aux .env
   ],
   providers: [AIEngineService, LiveGateway],
   exports: [AIEngineService, LiveGateway],
