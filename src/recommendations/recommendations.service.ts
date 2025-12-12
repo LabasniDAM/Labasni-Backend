@@ -159,7 +159,7 @@ export class RecommendationsService {
       }
 
       // 4. Appeler Hugging Face Recommender Space
-      const hfApiUrl = `${this.hfRecommenderUrl}/api/predict`;
+      const hfApiUrl = `${this.hfRecommenderUrl}/run/predict`;
       this.logger.log(`📡 Appel Hugging Face : ${hfApiUrl}`);
 
       const response = await firstValueFrom(
