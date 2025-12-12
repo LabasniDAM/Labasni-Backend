@@ -9,9 +9,9 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { HttpService } from '@nestjs/axios'; // ✅ NOUVEAU
-import { ConfigService } from '@nestjs/config'; // ✅ NOUVEAU
-import { firstValueFrom } from 'rxjs'; // ✅ NOUVEAU
+import { HttpService } from '@nestjs/axios';
+import { ConfigService } from '@nestjs/config';
+import { firstValueFrom } from 'rxjs';
 import { Clothes, ClothesDocument } from 'src/clothes/schemas/clothes.schema';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 
@@ -23,8 +23,8 @@ export class RecommendationsService {
   constructor(
     @InjectModel(Clothes.name) private clothesModel: Model<ClothesDocument>,
     private subscriptionsService: SubscriptionsService,
-    private readonly httpService: HttpService, // ✅ NOUVEAU
-    private readonly configService: ConfigService, // ✅ NOUVEAU
+    private readonly httpService: HttpService,
+    private readonly configService: ConfigService,
   ) {
     // Récupérer l'URL du Space Hugging Face depuis .env
     this.hfRecommenderUrl = this.configService.get<string>('HF_RECOMMENDER_URL')!;    
@@ -158,47 +158,74 @@ export class RecommendationsService {
         );
       }
 
-      // 4. Appeler Hugging Face Recommender Space
-      const hfApiUrl = `${this.hfRecommenderUrl}/run/predict`;
-      this.logger.log(`📡 Appel Hugging Face : ${hfApiUrl}`);
+      // 4. ✅ CORRECTION : Tester plusieurs endpoints possibles
+      const possibleEndpoints = [
+        '/api/predict',    // Gradio 4.x+
+        '/run/predict',    // Anciennes versions
+        '/predict',        // Fallback
+      ];
 
-      const response = await firstValueFrom(
-        this.httpService.post(hfApiUrl, {
-          data: [
-            JSON.stringify(clothesData), // Argument 1 : clothes_json
-            normalizedPreference,        // Argument 2 : preference
-            cityParam,                   // Argument 3 : city
-          ],
-        }, {
-          timeout: 30000, // 30 secondes
-        }),
-      );
+      let hfResult: any = null;
+      let successEndpoint: string = '';
 
-      // 5. Parser la réponse Gradio
-      const hfResult = response.data?.data?.[0];
-      
+      for (const endpoint of possibleEndpoints) {
+        try {
+          const hfApiUrl = `${this.hfRecommenderUrl}${endpoint}`;
+          this.logger.log(`📡 Tentative avec : ${hfApiUrl}`);
+
+          const response = await firstValueFrom(
+            this.httpService.post(hfApiUrl, {
+              data: [
+                JSON.stringify(clothesData), // Argument 1 : clothes_json
+                normalizedPreference,        // Argument 2 : preference
+                cityParam,                   // Argument 3 : city
+              ],
+            }, {
+              timeout: 30000, // 30 secondes
+              headers: {
+                'Content-Type': 'application/json',
+              },
+            }),
+          );
+
+          // Si réponse OK, on utilise cet endpoint
+          if (response.status === 200 && response.data) {
+            hfResult = response.data?.data?.[0];
+            successEndpoint = endpoint;
+            this.logger.log(`✅ Succès avec l'endpoint : ${endpoint}`);
+            break; // Sortir de la boucle
+          }
+
+        } catch (error: any) {
+          this.logger.warn(`⚠️ Échec avec ${endpoint}: ${error.message}`);
+          // Continuer avec le prochain endpoint
+          continue;
+        }
+      }
+
+      // 5. Vérifier si on a obtenu un résultat
       if (!hfResult) {
         throw new HttpException(
-          'Erreur de réponse du service ML',
-          HttpStatus.INTERNAL_SERVER_ERROR,
+          'Unable to connect to the ML recommendation service. All endpoints failed.',
+          HttpStatus.SERVICE_UNAVAILABLE,
         );
       }
 
-      // La réponse est une string JSON, on doit la parser
+      // 6. Parser la réponse Gradio
       const recommendation = typeof hfResult === 'string' 
         ? JSON.parse(hfResult) 
         : hfResult;
 
-      this.logger.log(`✅ Recommandation reçue : ${JSON.stringify(recommendation.outfit)}`);
+      this.logger.log(`✅ Recommandation reçue via ${successEndpoint}`);
 
-      // 6. Vérifier le succès
+      // 7. Vérifier le succès
       if (!recommendation.success || !recommendation.outfit) {
         throw new BadRequestException(
           recommendation.message || 'Unable to generate recommendation',
         );
       }
 
-      // 7. Récupérer les détails complets des vêtements depuis MongoDB
+      // 8. Récupérer les détails complets des vêtements depuis MongoDB
       const topId = recommendation.outfit.top;
       const bottomId = recommendation.outfit.bottom;
       const footwearId = recommendation.outfit.footwear;
@@ -217,7 +244,7 @@ export class RecommendationsService {
       this.logger.log(`✅ [Recommendations] Suggestion réussie - Incrémentation du compteur`);
       await this.subscriptionsService.incrementOutfitSuggestion(userId);
 
-      // 8. Construire la réponse finale
+      // 9. Construire la réponse finale
       const response_final = {
         success: true,
         outfit: {
