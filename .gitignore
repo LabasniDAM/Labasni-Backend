@@ -137,17 +137,101 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
-debug_cropped.jpg
-debug_full.jpg
+
+# ============================================
+# Python - Environnements virtuels
+# ============================================
+# Tous les environnements virtuels Python
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.venv
+venv
+env
+ENV
+/src/python-vto-service/venv/
+/src/python-vto-service/venv/bin/
+
+# ============================================
+# Python - Fichiers de cache et compilation
+# ============================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist-packages/
+*.egg
+.pytest_cache/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+cython_debug/
+
+# ============================================
+# Documentation Markdown
+# ============================================
+*.md
+!README.md
+
+# ============================================
+# Fichiers temporaires et uploads
+# ============================================
+temp_uploads/
+*.tmp
+*.temp
+*.json.bak
+cache_images/
+*.cache
+/src/python-vto-service/cache_images/
+
+# ============================================
+# Fichiers de debug et test
+# ============================================
+debug_*.jpg
+debug_*.png
+test_*.jpg
+test_*.png
 test.jpg
 test_nobg.png
-.DS_Store
-.DS_Store
+*.jpg.bak
+*.png.bak
 
+# ============================================
+# IDE et éditeurs
+# ============================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+*.sublime-project
+*.sublime-workspace
 
+# ============================================
+# OS spécifique
+# ============================================
 .DS_Store
-/src/python-vto-service/venv/bin
-/src/python-vto-service/venv
-/src/python-vto-service/cache_images
-.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
 
+# ============================================
+# Logs et fichiers de diagnostic
+# ============================================
+*.log.*
+.pnpm-debug.log*
