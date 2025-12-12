@@ -141,16 +141,45 @@ export class RecommendationsService {
       // Nettoyer l'URL de base (enlever le / à la fin si présent)
       const baseUrl = this.hfRecommenderUrl.replace(/\/$/, '');
       
-      // Pour Gradio 6.x, l'endpoint standard est /run/predict
-      // Si api_name est défini, on peut aussi essayer /api/{api_name}
+      // Pour Gradio 6.x avec api_name="predict", tester plusieurs variantes
+      // Gradio 6.x peut utiliser différents formats selon la configuration
       const possibleEndpoints = [
-        `${baseUrl}/run/predict`,      // ✅ Endpoint standard Gradio 6.x
-        `${baseUrl}/api/predict`,       // Si api_name="predict" fonctionne
+        `${baseUrl}/api/predict/`,     // ✅ Format avec slash final (Gradio 6.x standard)
+        `${baseUrl}/api/predict`,       // Format sans slash final
+        `${baseUrl}/run/predict`,      // Endpoint alternatif Gradio
+        `${baseUrl}/predict`,          // Format simplifié
       ];
 
       let hfResult: any = null;
       let lastError: any = null;
 
+      // ✅ D'abord, vérifier si le Space est accessible
+      try {
+        const healthCheck = await firstValueFrom(
+          this.httpService.get(`${baseUrl}/`, {
+            timeout: 5000,
+            validateStatus: () => true, // Accepter tous les statuts pour le diagnostic
+          }),
+        );
+        this.logger.log(`✅ Space accessible (Status: ${healthCheck.status})`);
+      } catch (healthError: any) {
+        this.logger.warn(`⚠️ Impossible d'accéder au Space: ${healthError.message}`);
+      }
+
+      // ✅ Essayer de récupérer la liste des endpoints disponibles
+      try {
+        const apiInfo = await firstValueFrom(
+          this.httpService.get(`${baseUrl}/api`, {
+            timeout: 5000,
+            validateStatus: () => true,
+          }),
+        );
+        this.logger.log(`📋 Endpoints disponibles: ${JSON.stringify(apiInfo.data)}`);
+      } catch (apiError: any) {
+        this.logger.debug(`ℹ️ Page /api non accessible: ${apiError.message}`);
+      }
+
+      // ✅ Essayer chaque endpoint
       for (const hfApiUrl of possibleEndpoints) {
         try {
           this.logger.log(`📡 Tentative avec : ${hfApiUrl}`);
@@ -171,7 +200,7 @@ export class RecommendationsService {
                 headers: {
                   'Content-Type': 'application/json',
                 },
-                // ✅ Ajouter validation du statut
+                // ✅ Accepter seulement 200
                 validateStatus: (status) => status === 200,
               },
             ),
@@ -189,11 +218,17 @@ export class RecommendationsService {
         } catch (error: any) {
           lastError = error;
           const statusCode = error.response?.status || error.code;
-          const errorMessage = error.response?.data?.error || error.message;
+          const errorMessage = error.response?.data?.error || error.response?.data?.detail || error.message;
+          const fullErrorData = error.response?.data;
           
           this.logger.warn(
             `⚠️ Échec avec ${hfApiUrl}: ${errorMessage} (Status: ${statusCode})`
           );
+          
+          // Log détaillé pour diagnostic
+          if (fullErrorData) {
+            this.logger.debug(`   Détails de l'erreur: ${JSON.stringify(fullErrorData)}`);
+          }
           
           // Si ce n'est pas une 404, on peut arrêter (erreur serveur)
           if (statusCode !== 404) {
