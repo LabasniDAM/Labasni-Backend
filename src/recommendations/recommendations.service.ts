@@ -137,128 +137,82 @@ export class RecommendationsService {
         );
       }
 
-      // 4. ✅ CORRECTION : Utiliser le bon endpoint Gradio 6.x
+      // 4. ✅ CORRECTION : Utiliser le bon endpoint pour Gradio 6.x
+      // Nettoyer l'URL de base (enlever le / à la fin si présent)
+      const baseUrl = this.hfRecommenderUrl.replace(/\/$/, '');
+      
+      // Pour Gradio 6.x, l'endpoint standard est /run/predict
+      // Si api_name est défini, on peut aussi essayer /api/{api_name}
       const possibleEndpoints = [
-        '/call/predict',   // ✅ Gradio 6.x (NOUVEAU)
-        '/api/predict',    // Gradio 4.x-5.x
-        '/run/predict',    // Anciennes versions
+        `${baseUrl}/run/predict`,      // ✅ Endpoint standard Gradio 6.x
+        `${baseUrl}/api/predict`,       // Si api_name="predict" fonctionne
       ];
 
       let hfResult: any = null;
-      let successEndpoint: string = '';
-      let eventId: string | null = null;
+      let lastError: any = null;
 
-      for (const endpoint of possibleEndpoints) {
+      for (const hfApiUrl of possibleEndpoints) {
         try {
-          const hfApiUrl = `${this.hfRecommenderUrl}${endpoint}`;
           this.logger.log(`📡 Tentative avec : ${hfApiUrl}`);
 
-          // ✅ Pour Gradio 6.x avec /call/predict, c'est un processus en 2 étapes
-          if (endpoint === '/call/predict') {
-            // Étape 1 : Initier l'appel
-            const initiateResponse = await firstValueFrom(
-              this.httpService.post(hfApiUrl, {
+          // ✅ Format correct pour Gradio 6.x
+          const response = await firstValueFrom(
+            this.httpService.post(
+              hfApiUrl,
+              {
                 data: [
-                  JSON.stringify(clothesData),
-                  normalizedPreference,
-                  cityParam,
+                  JSON.stringify(clothesData), // Argument 1 : clothes_json (string)
+                  normalizedPreference,        // Argument 2 : preference (string)
+                  cityParam,                   // Argument 3 : city (string)
                 ],
-              }, {
-                timeout: 5000,
-                headers: { 'Content-Type': 'application/json' },
-              }),
-            );
+              },
+              {
+                timeout: 30000, // 30 secondes
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                // ✅ Ajouter validation du statut
+                validateStatus: (status) => status === 200,
+              },
+            ),
+          );
 
-            // Récupérer l'event_id
-            eventId = initiateResponse.data?.event_id;
-            
-            if (!eventId) {
-              this.logger.warn(`⚠️ Pas d'event_id reçu pour ${endpoint}`);
-              continue;
-            }
-
-            this.logger.log(`   🔑 Event ID reçu : ${eventId}`);
-
-            // Étape 2 : Récupérer le résultat
-            const resultUrl = `${this.hfRecommenderUrl}/call/predict/${eventId}`;
-            this.logger.log(`   📥 Récupération du résultat : ${resultUrl}`);
-
-            // Attendre le résultat (avec retry)
-            let attempts = 0;
-            const maxAttempts = 10;
-            
-            while (attempts < maxAttempts) {
-              try {
-                const resultResponse = await firstValueFrom(
-                  this.httpService.get(resultUrl, {
-                    timeout: 3000,
-                  }),
-                );
-
-                // Gradio 6.x retourne un stream d'événements SSE
-                const lines = resultResponse.data.split('\n');
-                
-                for (const line of lines) {
-                  if (line.startsWith('data: ')) {
-                    const data = JSON.parse(line.substring(6));
-                    
-                    if (data.msg === 'process_completed' && data.output?.data) {
-                      hfResult = data.output.data[0];
-                      successEndpoint = endpoint;
-                      this.logger.log(`✅ Succès avec ${endpoint}`);
-                      break;
-                    }
-                  }
-                }
-
-                if (hfResult) break;
-                
-                // Attendre 500ms avant le prochain essai
-                await new Promise(resolve => setTimeout(resolve, 500));
-                attempts++;
-                
-              } catch (pollError: any) {
-                this.logger.warn(`   ⏳ Attente résultat (tentative ${attempts + 1}/${maxAttempts})`);
-                attempts++;
-                await new Promise(resolve => setTimeout(resolve, 500));
-              }
-            }
-
-            if (hfResult) break;
-
-          } else {
-            // Pour les anciens endpoints
-            const response = await firstValueFrom(
-              this.httpService.post(hfApiUrl, {
-                data: [
-                  JSON.stringify(clothesData),
-                  normalizedPreference,
-                  cityParam,
-                ],
-              }, {
-                timeout: 30000,
-                headers: { 'Content-Type': 'application/json' },
-              }),
-            );
-
-            if (response.status === 200 && response.data) {
-              hfResult = response.data?.data?.[0];
-              successEndpoint = endpoint;
-              this.logger.log(`✅ Succès avec ${endpoint}`);
-              break;
-            }
+          // ✅ Parser la réponse Gradio 6.x
+          // La réponse est dans response.data.data[0]
+          hfResult = response.data?.data?.[0];
+          
+          if (hfResult) {
+            this.logger.log(`✅ Succès avec : ${hfApiUrl}`);
+            break;
           }
 
         } catch (error: any) {
-          this.logger.warn(`⚠️ Échec avec ${endpoint}: ${error.message}`);
+          lastError = error;
+          const statusCode = error.response?.status || error.code;
+          const errorMessage = error.response?.data?.error || error.message;
+          
+          this.logger.warn(
+            `⚠️ Échec avec ${hfApiUrl}: ${errorMessage} (Status: ${statusCode})`
+          );
+          
+          // Si ce n'est pas une 404, on peut arrêter (erreur serveur)
+          if (statusCode !== 404) {
+            this.logger.error(`❌ Erreur serveur (${statusCode}), arrêt des tentatives`);
+            break;
+          }
+          
+          // Sinon, continuer avec le prochain endpoint
           continue;
         }
       }
 
       // 5. Vérifier le résultat
       if (!hfResult) {
+        const errorDetails = lastError?.response?.data || lastError?.message || 'Unknown error';
+        this.logger.error(`❌ Tous les endpoints ont échoué. Dernière erreur: ${JSON.stringify(errorDetails)}`);
+        
         throw new HttpException(
-          'Unable to connect to ML service. All endpoints failed.',
+          `Unable to connect to the ML recommendation service. All endpoints failed. Last error: ${lastError?.message || 'Unknown'}`,
           HttpStatus.SERVICE_UNAVAILABLE,
         );
       }
@@ -268,7 +222,7 @@ export class RecommendationsService {
         ? JSON.parse(hfResult) 
         : hfResult;
 
-      this.logger.log(`✅ Recommandation reçue via ${successEndpoint}`);
+      this.logger.log(`✅ Recommandation reçue`);
 
       if (!recommendation.success || !recommendation.outfit) {
         throw new BadRequestException(
