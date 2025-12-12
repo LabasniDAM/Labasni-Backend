@@ -104,7 +104,28 @@ async confirmPurchase(
   @Body() dto: ConfirmPurchaseDto,
   @GetUser() user: any,
 ): Promise<Store> {
-  return this.storeService.confirmPurchase(storeItemId, dto, user.id);
+  // ✨ CORRIGÉ : Utiliser user.id ou user._id de manière robuste
+  // Le user vient de JwtStrategy.validate() qui retourne un SafeUser
+  // SafeUser a un id qui peut être undefined, donc on utilise _id comme fallback
+  // IMPORTANT : Toujours convertir en string pour éviter les problèmes avec ObjectId
+  let buyerId: string = user.id || user._id || (user as any)?._id?.toString();
+  
+  // ✨ CRITIQUE : S'assurer que buyerId est une string, pas un ObjectId
+  if (buyerId && typeof buyerId !== 'string') {
+    buyerId = String(buyerId);
+  }
+  
+  if (!buyerId) {
+    throw new BadRequestException('User ID not found in token');
+  }
+  
+  console.log('🔍 [StoreController] confirmPurchase');
+  console.log('   👤 user.id type:', typeof user.id);
+  console.log('   👤 user.id value:', user.id);
+  console.log('   👤 buyerId extracted (string):', buyerId);
+  console.log('   👤 buyerId type:', typeof buyerId);
+  
+  return this.storeService.confirmPurchase(storeItemId, dto, buyerId);
 }
 
 // ✅ NOUVEAU : Endpoint pour tester l'achat en DEV

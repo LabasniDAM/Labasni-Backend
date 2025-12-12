@@ -85,7 +85,8 @@ export class UserService {
       return null;
     }
     const safeUser = user.toObject() as SafeUser;
-    safeUser.id = safeUser.id ?? String(user._id);
+    // ✨ CRITIQUE : Toujours convertir en string pour éviter les problèmes avec ObjectId
+    safeUser.id = String(safeUser.id ?? user._id);
     return safeUser;
   }
 
@@ -215,8 +216,19 @@ async subtractFromBalance(userId: string, amountCents: number): Promise<SafeUser
     throw new BadRequestException('Le montant doit être positif');
   }
 
-  const user = await this.userModel.findById(userId).exec();
+  // ✨ CRITIQUE : S'assurer que userId est une string valide
+  // Si c'est un ObjectId, le convertir en string
+  const userIdString = typeof userId === 'string' ? userId : String(userId);
+  
+  console.log('🔍 [UserService] subtractFromBalance');
+  console.log('   👤 userId (param):', userId);
+  console.log('   👤 userId type:', typeof userId);
+  console.log('   👤 userIdString:', userIdString);
+  console.log('   👤 userIdString type:', typeof userIdString);
+  
+  const user = await this.userModel.findById(userIdString).exec();
   if (!user) {
+    console.error('❌ [UserService] User not found with userId:', userIdString);
     throw new NotFoundException('Utilisateur introuvable');
   }
 

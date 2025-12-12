@@ -196,6 +196,12 @@ export class StoreService {
     dto: ConfirmPurchaseDto,
     buyerId: string,
   ): Promise<Store> {
+    // ✨ LOGS DE DEBUG : Vérifier le buyerId reçu
+    console.log('🔍 [StoreService] confirmPurchase called');
+    console.log('   📦 storeItemId:', storeItemId);
+    console.log('   👤 buyerId:', buyerId);
+    console.log('   💳 paymentMethod:', dto.paymentMethod);
+    
     const item = await this.storeModel.findById(storeItemId).exec();
     
     if (!item) {
@@ -228,12 +234,37 @@ export class StoreService {
         throw new BadRequestException('paymentIntentId ne doit pas être fourni pour le paiement par balance');
       }
 
+      // ✨ LOGS DE DEBUG : Vérifier avant findById
+      console.log('💰 [StoreService] Processing balance payment');
+      console.log('   🔍 buyerId before findById:', buyerId);
+      console.log('   🔍 buyerId type:', typeof buyerId);
+      console.log('   🔍 buyerId length:', buyerId?.length);
+      
       const buyer = await this.userService.findById(buyerId);
+      
+      console.log('   👤 buyer found:', buyer ? 'YES' : 'NO');
+      if (buyer) {
+        console.log('   💰 buyer balance:', buyer.balance);
+        console.log('   💰 amountCents:', amountCents);
+      }
+      
       if (!buyer || (buyer.balance || 0) < amountCents) {
         throw new BadRequestException('Solde insuffisant');
       }
 
-      await this.userService.subtractFromBalance(buyerId, amountCents);
+      // ✨ CORRIGÉ : Utiliser buyer.id si disponible, sinon buyerId
+      // buyer.id est garanti d'exister car il vient de findById qui le définit
+      // IMPORTANT : Toujours convertir en string pour subtractFromBalance
+      // buyer.id devrait déjà être une string grâce à findById qui le convertit
+      let userIdToUse: string = String(buyer.id || buyerId);
+      
+      console.log('   🔍 buyerId (from param):', buyerId);
+      console.log('   🔍 buyer.id:', buyer.id);
+      console.log('   🔍 Using userIdToUse (string):', userIdToUse);
+      console.log('   🔍 userIdToUse type:', typeof userIdToUse);
+      console.log('   🔍 userIdToUse length:', userIdToUse.length);
+      
+      await this.userService.subtractFromBalance(userIdToUse, amountCents);
     }
 
     // PAIEMENT PAR STRIPE

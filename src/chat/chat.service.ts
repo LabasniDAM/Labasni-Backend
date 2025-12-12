@@ -107,7 +107,8 @@ export class ChatService {
       updatedAt: new Date(),
     });
 
-    return await message.populate('senderId', 'fullName profilePicture');
+    // ✨ CORRIGÉ : Inclure explicitement _id dans le populate (nécessaire pour iOS)
+    return await message.populate('senderId', '_id fullName profilePicture');
   }
 
   // RÉCUPÉRER LES MESSAGES D'UNE CONVERSATION (CORRIGÉ)
@@ -127,7 +128,7 @@ export class ChatService {
     const messages = await this.messageModel
       .find({ conversationId: convObjectId })
       .sort({ createdAt: 1 })
-      .populate('senderId', 'fullName profilePicture');
+      .populate('senderId', '_id fullName profilePicture');
 
     this.logger.log(`${messages.length} messages trouvés`);
 
@@ -142,7 +143,7 @@ export class ChatService {
       .populate('participants', 'fullName profilePicture email')
       .populate({
         path: 'lastMessage',
-        populate: { path: 'senderId', select: 'fullName profilePicture' },
+        populate: { path: 'senderId', select: '_id fullName profilePicture' },
       })
       .lean();
 
@@ -153,7 +154,7 @@ export class ChatService {
         const messages = await this.messageModel
           .find({ conversationId: conv._id })
           .sort({ createdAt: 1 })
-          .populate('senderId', 'fullName profilePicture')
+          .populate('senderId', '_id fullName profilePicture')
           .lean();
 
         return {
