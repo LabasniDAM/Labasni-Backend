@@ -295,24 +295,44 @@ export class StoreService {
     // CRÉDIT VENDEUR
     await this.userService.addToBalance(sellerId, amountCents);
 
-    // ✨ NOUVEAU : CRÉER L'ORDRE AVANT DE SUPPRIMER (pour sauvegarder toutes les infos)
+    // ✨ CRÉER LES ORDRES POUR L'ACHETEUR ET LE VENDEUR
     // Stocker toutes les informations importantes avant de supprimer le dressing
     try {
-      const newOrder = new this.orderModel({
+      // 1. Order pour l'acheteur (Purchased)
+      const buyerOrder = new this.orderModel({
         clothesId: item.clothesId,
         userId: new Types.ObjectId(buyerId),
         price: item.price,
         orderDate: new Date(),
-        imageURL: imageURL, // ✨ Image
-        category: category, // ✨ Category
-        style: style, // ✨ Style
-        color: color, // ✨ Color
-        season: season, // ✨ Season
-        size: item.size, // ✨ Taille depuis Store
+        imageURL: imageURL,
+        category: category,
+        style: style,
+        color: color,
+        season: season,
+        size: item.size,
+        orderType: 'Purchased', // ✨ NOUVEAU : Type explicite pour l'acheteur
       });
 
-      await newOrder.save();
+      await buyerOrder.save();
       console.log(`✅ Order created for buyer ${buyerId}, item ${storeItemId} with all details saved`);
+
+      // 2. Order pour le vendeur (Sold) - ✨ NOUVEAU
+      const sellerOrder = new this.orderModel({
+        clothesId: item.clothesId,
+        userId: new Types.ObjectId(sellerId), // ✨ userId = sellerId pour le vendeur
+        price: item.price,
+        orderDate: new Date(),
+        imageURL: imageURL,
+        category: category,
+        style: style,
+        color: color,
+        season: season,
+        size: item.size,
+        orderType: 'Sold', // ✨ NOUVEAU : Type explicite pour le vendeur
+      });
+
+      await sellerOrder.save();
+      console.log(`✅ Order created for seller ${sellerId}, item ${storeItemId} with all details saved`);
     } catch (error) {
       console.error('Failed to create order:', error);
       // Ne pas bloquer la transaction si la création d'ordre échoue

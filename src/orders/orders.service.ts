@@ -84,6 +84,10 @@ export class OrdersService {
     if (order.size) {
       order.size = order.size;
     }
+    // ✨ NOUVEAU : Préserver orderType
+    if (order.orderType) {
+      order.orderType = order.orderType;
+    }
     return order;
   }
 
@@ -296,10 +300,26 @@ export class OrdersService {
   async getUnifiedHistory(userId: string): Promise<any[]> {
     const history: any[] = [];
 
-    // 1. Achats : Orders où userId = userId (l'utilisateur a acheté)
-    const rawPurchases = await this.orderModel
+    // ✨ ÉTAPE 1 : Récupérer tous les vêtements de l'utilisateur (pour distinguer achats/ventes)
+    const userClothes = await this.clothesModel
       .find({ userId: new Types.ObjectId(userId) })
-      .select('_id clothesId userId price orderDate createdAt imageURL category style color season size')
+      .select('_id')
+      .lean()
+      .exec();
+
+    const userClothesIds = userClothes.map((cloth: any) => cloth._id);
+
+    // ✨ ÉTAPE 2 : Achats = Orders où userId = userId ET orderType = 'Purchased' (ou null/undefined pour compatibilité)
+    const rawPurchases = await this.orderModel
+      .find({ 
+        userId: new Types.ObjectId(userId),
+        $or: [
+          { orderType: 'Purchased' },
+          { orderType: { $exists: false } }, // Compatibilité avec les anciens orders
+          { orderType: null }
+        ]
+      })
+      .select('_id clothesId userId price orderDate createdAt imageURL category style color season size orderType')
       .sort({ orderDate: -1 })
       .lean()
       .exec();
@@ -315,7 +335,14 @@ export class OrdersService {
 
     // Populate pour obtenir les données complètes
     const purchases = await this.orderModel
-      .find({ userId: new Types.ObjectId(userId) })
+      .find({ 
+        userId: new Types.ObjectId(userId),
+        $or: [
+          { orderType: 'Purchased' },
+          { orderType: { $exists: false } }, // Compatibilité avec les anciens orders
+          { orderType: null }
+        ]
+      })
       .populate('clothesId', 'name category imageURL style color season')
       .populate('userId', 'fullName email')
       .sort({ orderDate: -1 })
@@ -345,7 +372,8 @@ export class OrdersService {
       // Créer un objet d'historique unifié
       const historyItem: any = Object.create(null);
       historyItem._id = enrichedOrder._id.toString();
-      historyItem.type = 'Purchased'; // ✨ Tag pour indiquer que c'est un achat
+      // ✨ Utiliser orderType du Order (ou 'Purchased' par défaut pour compatibilité)
+      historyItem.type = enrichedOrder.orderType || 'Purchased';
       historyItem.clothesId = {
         _id: enrichedOrder.clothesId._id || enrichedOrder.clothesId.id || '',
         name: enrichedOrder.clothesId.name || enrichedOrder.category || 'Article',
@@ -355,7 +383,7 @@ export class OrdersService {
         color: enrichedOrder.clothesId.color || enrichedOrder.color || '',
         season: enrichedOrder.clothesId.season || enrichedOrder.season || '',
       };
-      historyItem.price = enrichedOrder.price;
+      historyItem.price = Math.abs(enrichedOrder.price); // ✨ Prix absolu (couleur rouge côté frontend)
       historyItem.date = enrichedOrder.orderDate || enrichedOrder.createdAt;
       historyItem.createdAt = enrichedOrder.createdAt;
       historyItem.size = enrichedOrder.size;
@@ -363,19 +391,13 @@ export class OrdersService {
       history.push(historyItem);
     });
 
-    // 2. Ventes : Orders où le vendeur est l'utilisateur actuel
-    const userClothes = await this.clothesModel
-      .find({ userId: new Types.ObjectId(userId) })
-      .select('_id')
-      .lean()
-      .exec();
-
-    const userClothesIds = userClothes.map((cloth: any) => cloth._id);
-
-    // Récupérer les orders de vente
+    // ✨ ÉTAPE 3 : Ventes = Orders où userId = userId ET orderType = 'Sold'
     const rawSales = await this.orderModel
-      .find({ clothesId: { $in: userClothesIds } })
-      .select('_id clothesId userId price orderDate createdAt imageURL category style color season size')
+      .find({ 
+        userId: new Types.ObjectId(userId),
+        orderType: 'Sold' // ✨ CRITIQUE : Utiliser le champ orderType explicite
+      })
+      .select('_id clothesId userId price orderDate createdAt imageURL category style color season size orderType')
       .sort({ orderDate: -1 })
       .lean()
       .exec();
@@ -391,7 +413,10 @@ export class OrdersService {
 
     // Populate pour obtenir les données complètes
     const sales = await this.orderModel
-      .find({ clothesId: { $in: userClothesIds } })
+      .find({ 
+        userId: new Types.ObjectId(userId),
+        orderType: 'Sold' // ✨ CRITIQUE : Utiliser le champ orderType explicite
+      })
       .populate('clothesId', 'name category imageURL style color season')
       .populate('userId', 'fullName email')
       .sort({ orderDate: -1 })
@@ -399,50 +424,47 @@ export class OrdersService {
       .exec();
 
     sales.forEach((order: any) => {
-      // S'assurer que ce n'est pas un achat de l'utilisateur (déjà ajouté)
-      const orderUserId = order.userId?.toString() || (order.userId as any)?._id?.toString() || order.userId;
-      const currentUserId = userId.toString();
-
-      if (orderUserId !== currentUserId) {
-        // Si populate a échoué, utiliser les données stockées
-        if (!order.clothesId || !order.clothesId._id) {
-          const rawOrder = saleMap.get(order._id.toString());
-          if (rawOrder && rawOrder.clothesIdObjectId) {
-            order.clothesId = {
-              _id: rawOrder.clothesIdObjectId,
-              name: order.category || 'Article supprimé',
-              category: order.category || 'unknown',
-              imageURL: order.imageURL || '',
-              style: order.style || '',
-              color: order.color || '',
-              season: order.season || '',
-            };
-          }
+      // ✨ MODIFIÉ : Plus besoin de vérifier orderUserId !== currentUserId
+      // car on cherche directement les Orders où userId = userId (vendeur)
+      // Si populate a échoué, utiliser les données stockées
+      if (!order.clothesId || !order.clothesId._id) {
+        const rawOrder = saleMap.get(order._id.toString());
+        if (rawOrder && rawOrder.clothesIdObjectId) {
+          order.clothesId = {
+            _id: rawOrder.clothesIdObjectId,
+            name: order.category || 'Article supprimé',
+            category: order.category || 'unknown',
+            imageURL: order.imageURL || '',
+            style: order.style || '',
+            color: order.color || '',
+            season: order.season || '',
+          };
         }
-
-        // Enrichir avec les données stockées
-        const enrichedOrder = this.enrichOrderWithStoredData(order);
-
-        // Créer un objet d'historique unifié
-        const historyItem: any = Object.create(null);
-        historyItem._id = `sale_${enrichedOrder._id.toString()}`;
-        historyItem.type = 'Sold'; // ✨ Tag pour indiquer que c'est une vente
-        historyItem.clothesId = {
-          _id: enrichedOrder.clothesId._id || enrichedOrder.clothesId.id || '',
-          name: enrichedOrder.clothesId.name || enrichedOrder.category || 'Article',
-          category: enrichedOrder.clothesId.category || enrichedOrder.category || 'unknown',
-          imageURL: enrichedOrder.clothesId.imageURL || enrichedOrder.imageURL || '',
-          style: enrichedOrder.clothesId.style || enrichedOrder.style || '',
-          color: enrichedOrder.clothesId.color || enrichedOrder.color || '',
-          season: enrichedOrder.clothesId.season || enrichedOrder.season || '',
-        };
-        historyItem.price = enrichedOrder.price;
-        historyItem.date = enrichedOrder.orderDate || enrichedOrder.createdAt;
-        historyItem.createdAt = enrichedOrder.createdAt;
-        historyItem.size = enrichedOrder.size;
-
-        history.push(historyItem);
       }
+
+      // Enrichir avec les données stockées
+      const enrichedOrder = this.enrichOrderWithStoredData(order);
+
+      // Créer un objet d'historique unifié
+      const historyItem: any = Object.create(null);
+      historyItem._id = `sale_${enrichedOrder._id.toString()}`;
+      // ✨ Utiliser orderType du Order (doit être 'Sold' car on filtre par orderType = 'Sold')
+      historyItem.type = enrichedOrder.orderType || 'Sold';
+      historyItem.clothesId = {
+        _id: enrichedOrder.clothesId._id || enrichedOrder.clothesId.id || '',
+        name: enrichedOrder.clothesId.name || enrichedOrder.category || 'Article',
+        category: enrichedOrder.clothesId.category || enrichedOrder.category || 'unknown',
+        imageURL: enrichedOrder.clothesId.imageURL || enrichedOrder.imageURL || '',
+        style: enrichedOrder.clothesId.style || enrichedOrder.style || '',
+        color: enrichedOrder.clothesId.color || enrichedOrder.color || '',
+        season: enrichedOrder.clothesId.season || enrichedOrder.season || '',
+      };
+      historyItem.price = Math.abs(enrichedOrder.price); // ✨ Prix absolu (couleur verte côté frontend)
+      historyItem.date = enrichedOrder.orderDate || enrichedOrder.createdAt;
+      historyItem.createdAt = enrichedOrder.createdAt;
+      historyItem.size = enrichedOrder.size;
+
+      history.push(historyItem);
     });
 
     // Trier par date (plus récent en premier)

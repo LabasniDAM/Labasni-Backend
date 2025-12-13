@@ -35,6 +35,15 @@ export class Order {
 
   @Prop({ type: String, required: false })
   size?: string; // Taille de l'article vendu (depuis Store)
+
+  // ✨ NOUVEAU : Type d'ordre pour distinguer explicitement les achats des ventes
+  @Prop({ 
+    type: String, 
+    enum: ['Purchased', 'Sold'], 
+    required: false,
+    default: 'Purchased' // Par défaut pour compatibilité avec les anciens orders
+  })
+  orderType?: 'Purchased' | 'Sold'; // "Purchased" = achat, "Sold" = vente
 }
 
 export const OrderSchema = SchemaFactory.createForClass(Order);
