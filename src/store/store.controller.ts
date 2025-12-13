@@ -184,6 +184,7 @@ async testPurchase(
 
   /**
    * 🔧 Optimise une URL Cloudinary pour chargement rapide sur mobile
+   * Méthode SIMPLE : Insère les transformations directement dans l'URL existante
    * ⚠️ IMPORTANT : Si l'optimisation échoue, retourne l'URL originale pour éviter de casser les images
    */
   private getOptimizedCloudinaryUrl(originalUrl: string): string {
@@ -198,43 +199,32 @@ async testPurchase(
         return originalUrl;
       }
 
-      // Extraire le cloud_name depuis l'URL originale
-      const cloudNameMatch = originalUrl.match(/res\.cloudinary\.com\/([^\/]+)\//);
-      const cloudName = cloudNameMatch ? cloudNameMatch[1] : this.configService.get<string>('CLOUDINARY_CLOUD_NAME');
-
-      if (!cloudName) {
-        // ⚠️ FALLBACK : Si pas de cloud_name, retourner l'URL originale
-        return originalUrl;
-      }
-
-      // Extraire le public_id - format Cloudinary standard
-      let publicId: string | null = null;
+      // ✅ MÉTHODE SIMPLE : Insérer les transformations juste après /upload/
+      // Format: https://res.cloudinary.com/XXX/image/upload/TRANSFORMATIONS/public_id.ext
+      // On remplace /upload/ par /upload/TRANSFORMATIONS/
       
-      // Pattern 1: /image/upload/v123/public_id.ext ou /image/upload/public_id.ext
-      const imageUploadMatch = originalUrl.match(/\/image\/upload\/(?:v\d+\/)?([^?]+)/);
-      if (imageUploadMatch) {
-        publicId = imageUploadMatch[1];
-      } else {
-        // Pattern 2: /upload/v123/public_id.ext ou /upload/public_id.ext (ancien format)
-        const uploadMatch = originalUrl.match(/\/upload\/(?:v\d+\/)?([^?]+)/);
-        if (uploadMatch) {
-          publicId = uploadMatch[1];
-        }
-      }
-
-      if (!publicId) {
-        // ⚠️ FALLBACK : Si on ne peut pas extraire le public_id, retourner l'URL originale
-        return originalUrl;
-      }
-
-      // Nettoyer le public_id (enlever l'extension si présente et les query params)
-      publicId = publicId.split('?')[0]; // Enlever les query params
-      publicId = publicId.replace(/\.(jpg|jpeg|png|webp|gif)$/i, ''); // Enlever l'extension
-
-      // Construire l'URL optimisée
-      const optimizedUrl = `https://res.cloudinary.com/${cloudName}/image/upload/f_auto,q_auto:good,w_800,c_limit,fl_progressive/${publicId}`;
+      const transformations = 'f_auto,q_auto:good,w_800,c_limit,fl_progressive';
       
-      return optimizedUrl;
+      // Pattern 1: /image/upload/v123/ ou /image/upload/
+      if (originalUrl.includes('/image/upload/')) {
+        const optimizedUrl = originalUrl.replace(
+          /(\/image\/upload\/)(?:v\d+\/)?/,
+          `$1${transformations}/`
+        );
+        return optimizedUrl;
+      }
+      
+      // Pattern 2: /upload/v123/ ou /upload/ (ancien format)
+      if (originalUrl.includes('/upload/')) {
+        const optimizedUrl = originalUrl.replace(
+          /(\/upload\/)(?:v\d+\/)?/,
+          `$1${transformations}/`
+        );
+        return optimizedUrl;
+      }
+
+      // Si aucun pattern ne matche, retourner l'URL originale
+      return originalUrl;
 
     } catch (error) {
       // ⚠️ FALLBACK CRITIQUE : En cas d'erreur, TOUJOURS retourner l'URL originale

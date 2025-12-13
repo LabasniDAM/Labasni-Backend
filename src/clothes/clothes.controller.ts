@@ -25,18 +25,32 @@ import {
   ApiParam,
   ApiBearerAuth,
 } from '@nestjs/swagger';
+import { ConfigService } from '@nestjs/config';
 import { ClothesService } from './clothes.service';
 import { CreateClotheDto } from './dto/create-clothe.dto';
 import { UpdateClotheDto } from './dto/update-clothe.dto';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
 import { GetUser } from 'src/common/decorators/get-user.decorator';
+import { v2 as cloudinary } from 'cloudinary';
 
 @ApiTags('Clothes')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
 @Controller('clothes')
 export class ClothController {
-  constructor(private readonly clothService: ClothesService) {}
+  constructor(
+    private readonly clothService: ClothesService,
+    private readonly configService: ConfigService,
+  ) {
+    // Initialiser Cloudinary si pas déjà fait
+    if (!cloudinary.config().cloud_name) {
+      cloudinary.config({
+        cloud_name: this.configService.get<string>('CLOUDINARY_CLOUD_NAME'),
+        api_key: this.configService.get<string>('CLOUDINARY_API_KEY'),
+        api_secret: this.configService.get<string>('CLOUDINARY_API_SECRET'),
+      });
+    }
+  }
 
   // ==========================================
   // ROUTES VTO - NOUVELLES (EN PREMIER)
@@ -55,6 +69,8 @@ export class ClothController {
     }
 
     const clothes = await this.clothService.findAllByUser(user.id);
+    
+    // ✅ Optimisation activée avec API Cloudinary (plus fiable)
     
     console.log(`🔄 [getMyClothes] Optimisation de ${clothes.length} vêtements...`);
     
@@ -406,6 +422,7 @@ async getVTOProcessingStatus(@GetUser() user: any) {
 
   /**
    * 🔧 Optimise une URL Cloudinary pour chargement rapide sur mobile
+   * Méthode SIMPLE : Insère les transformations directement dans l'URL existante
    * ⚠️ IMPORTANT : Si l'optimisation échoue, retourne l'URL originale pour éviter de casser les images
    */
   private getOptimizedCloudinaryUrl(originalUrl: string): string {
@@ -417,64 +434,39 @@ async getVTOProcessingStatus(@GetUser() user: any) {
     try {
       // Si l'URL contient déjà des transformations, ne pas la modifier
       if (originalUrl.includes('/f_auto') || originalUrl.includes('/q_auto')) {
-        console.log('✅ [getOptimizedCloudinaryUrl] URL déjà optimisée, retournée telle quelle');
         return originalUrl;
       }
 
-      // Extraire le cloud_name depuis l'URL originale
-      const cloudNameMatch = originalUrl.match(/res\.cloudinary\.com\/([^\/]+)\//);
-      const cloudName = cloudNameMatch ? cloudNameMatch[1] : process.env.CLOUDINARY_CLOUD_NAME;
-
-      if (!cloudName) {
-        // ⚠️ FALLBACK : Si pas de cloud_name, retourner l'URL originale
-        console.warn('⚠️ [getOptimizedCloudinaryUrl] FALLBACK: CLOUDINARY_CLOUD_NAME non défini, utilisation URL originale');
-        return originalUrl;
+      // ✅ MÉTHODE SIMPLE : Insérer les transformations juste après /upload/
+      // Format: https://res.cloudinary.com/XXX/image/upload/TRANSFORMATIONS/public_id.ext
+      // On remplace /upload/ par /upload/TRANSFORMATIONS/
+      
+      const transformations = 'f_auto,q_auto:good,w_800,c_limit,fl_progressive';
+      
+      // Pattern 1: /image/upload/v123/ ou /image/upload/
+      if (originalUrl.includes('/image/upload/')) {
+        const optimizedUrl = originalUrl.replace(
+          /(\/image\/upload\/)(?:v\d+\/)?/,
+          `$1${transformations}/`
+        );
+        return optimizedUrl;
+      }
+      
+      // Pattern 2: /upload/v123/ ou /upload/ (ancien format)
+      if (originalUrl.includes('/upload/')) {
+        const optimizedUrl = originalUrl.replace(
+          /(\/upload\/)(?:v\d+\/)?/,
+          `$1${transformations}/`
+        );
+        return optimizedUrl;
       }
 
-      // Extraire le public_id - format Cloudinary standard
-      // Exemples d'URLs :
-      // https://res.cloudinary.com/XXX/image/upload/v123/labasni/clothes/shirt.jpg
-      // https://res.cloudinary.com/XXX/image/upload/labasni/clothes/shirt.jpg
-      // https://res.cloudinary.com/XXX/image/upload/labasni/clothes/shirt
-      
-      let publicId: string | null = null;
-      
-      // Pattern 1: /image/upload/v123/public_id.ext ou /image/upload/public_id.ext
-      const imageUploadMatch = originalUrl.match(/\/image\/upload\/(?:v\d+\/)?([^?]+)/);
-      if (imageUploadMatch) {
-        publicId = imageUploadMatch[1];
-      } else {
-        // Pattern 2: /upload/v123/public_id.ext ou /upload/public_id.ext (ancien format)
-        const uploadMatch = originalUrl.match(/\/upload\/(?:v\d+\/)?([^?]+)/);
-        if (uploadMatch) {
-          publicId = uploadMatch[1];
-        }
-      }
-
-      if (!publicId) {
-        // ⚠️ FALLBACK : Si on ne peut pas extraire le public_id, retourner l'URL originale
-        console.warn('⚠️ [getOptimizedCloudinaryUrl] FALLBACK: Impossible d\'extraire le public_id, utilisation URL originale:', originalUrl.substring(0, 80));
-        return originalUrl;
-      }
-
-      // Nettoyer le public_id (enlever seulement les query params, GARDER l'extension)
-      publicId = publicId.split('?')[0]; // Enlever les query params uniquement
-      // ⚠️ IMPORTANT : NE PAS enlever l'extension, Cloudinary en a besoin pour certaines transformations
-
-      // Construire l'URL optimisée (avec l'extension conservée)
-      const optimizedUrl = `https://res.cloudinary.com/${cloudName}/image/upload/f_auto,q_auto:good,w_800,c_limit,fl_progressive/${publicId}`;
-      
-      console.log('✅ [getOptimizedCloudinaryUrl] URL optimisée avec succès');
-      console.log(`   Originale: ${originalUrl.substring(0, 100)}...`);
-      console.log(`   Optimisée: ${optimizedUrl.substring(0, 100)}...`);
-      console.log(`   Public ID: ${publicId.substring(0, 80)}...`);
-      
-      return optimizedUrl;
+      // Si aucun pattern ne matche, retourner l'URL originale
+      return originalUrl;
 
     } catch (error) {
       // ⚠️ FALLBACK CRITIQUE : En cas d'erreur, TOUJOURS retourner l'URL originale
-      console.error(`❌ [getOptimizedCloudinaryUrl] FALLBACK: Erreur optimisation URL: ${error.message}`);
-      console.error(`   URL originale: ${originalUrl?.substring(0, 100)}`);
+      console.error(`❌ [getOptimizedCloudinaryUrl] Erreur, utilisation URL originale: ${error.message}`);
       return originalUrl;
     }
   }
