@@ -457,16 +457,17 @@ async getVTOProcessingStatus(@GetUser() user: any) {
         return originalUrl;
       }
 
-      // Nettoyer le public_id (enlever l'extension si présente et les query params)
-      publicId = publicId.split('?')[0]; // Enlever les query params
-      publicId = publicId.replace(/\.(jpg|jpeg|png|webp|gif)$/i, ''); // Enlever l'extension
+      // Nettoyer le public_id (enlever seulement les query params, GARDER l'extension)
+      publicId = publicId.split('?')[0]; // Enlever les query params uniquement
+      // ⚠️ IMPORTANT : NE PAS enlever l'extension, Cloudinary en a besoin pour certaines transformations
 
-      // Construire l'URL optimisée
+      // Construire l'URL optimisée (avec l'extension conservée)
       const optimizedUrl = `https://res.cloudinary.com/${cloudName}/image/upload/f_auto,q_auto:good,w_800,c_limit,fl_progressive/${publicId}`;
       
       console.log('✅ [getOptimizedCloudinaryUrl] URL optimisée avec succès');
       console.log(`   Originale: ${originalUrl.substring(0, 100)}...`);
       console.log(`   Optimisée: ${optimizedUrl.substring(0, 100)}...`);
+      console.log(`   Public ID: ${publicId.substring(0, 80)}...`);
       
       return optimizedUrl;
 
