@@ -179,5 +179,45 @@ export class OrdersController {
   async getTransactions(@GetUser() user: any) {
     return await this.ordersService.getTransactionsHistory(user.id);
   }
+
+  @Get('history')
+  @ApiOperation({
+    summary: 'Get unified transaction history (purchases and sales)',
+    description: 'Retrieve all clothing items (purchased or sold) with tags "Purchased" or "Sold". Items are sorted by date (newest first).',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'List of history items retrieved successfully',
+    schema: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          _id: { type: 'string', example: '507f1f77bcf86cd799439012' },
+          type: { type: 'string', enum: ['Purchased', 'Sold'], example: 'Purchased' },
+          clothesId: {
+            type: 'object',
+            properties: {
+              _id: { type: 'string' },
+              name: { type: 'string', example: 'T-Shirt' },
+              category: { type: 'string', example: 'top' },
+              imageURL: { type: 'string', example: 'https://example.com/image.jpg' },
+            },
+          },
+          price: { type: 'number', example: 99.99 },
+          date: { type: 'string', format: 'date-time', example: '2025-11-28T12:00:00.000Z' },
+          createdAt: { type: 'string', format: 'date-time' },
+          size: { type: 'string', example: 'M' },
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized - Missing or invalid token',
+  })
+  async getHistory(@GetUser() user: any) {
+    return await this.ordersService.getUnifiedHistory(user.id);
+  }
 }
 
