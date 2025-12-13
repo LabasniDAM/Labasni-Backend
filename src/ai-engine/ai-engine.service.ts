@@ -20,26 +20,38 @@ export class AIEngineService {
   private gradioClient: any = null;
 
   constructor(
-    private readonly configService: ConfigService,
-    private readonly httpService: HttpService,
-  ) {
-    this.hfVtoUrl = this.configService.get<string>('HF_VTO_URL')!;
-    this.localVtoUrl = this.configService.get<string>('AI_SERVICE_URL', 'http://localhost:5001');
-    
-    // ✅ Décider quelle source utiliser selon l'environnement
-    const nodeEnv = this.configService.get<string>('NODE_ENV', 'development');
-    this.useHuggingFace = nodeEnv === 'production' || !this.localVtoUrl.includes('localhost');
-    
-    if (this.useHuggingFace) {
-      this.logger.log(`🌐 Mode PRODUCTION : Utilisation Hugging Face`);
+  private readonly configService: ConfigService,
+  private readonly httpService: HttpService,
+) {
+  this.hfVtoUrl = this.configService.get<string>('HF_VTO_URL')!;
+  this.localVtoUrl = this.configService.get<string>('AI_SERVICE_URL', '');
+  
+  const nodeEnv = this.configService.get<string>('NODE_ENV', 'development');
+  
+  // ✅ LOGIQUE CORRIGÉE
+  // Production = TOUJOURS Hugging Face
+  // Dev = Local SI disponible, sinon HF
+  if (nodeEnv === 'production') {
+    this.useHuggingFace = true;
+    this.logger.log(`🌐 MODE PRODUCTION : Hugging Face forcé`);
+    this.logger.log(`   HF VTO URL: ${this.hfVtoUrl}`);
+    this.initializeGradioClient();
+  } else {
+    // Mode développement
+    if (this.localVtoUrl && this.localVtoUrl.includes('localhost')) {
+      this.useHuggingFace = false;
+      this.logger.log(`💻 MODE DEV : Python local`);
+      this.logger.log(`   Local URL: ${this.localVtoUrl}`);
+      this.checkLocalHealth();
+    } else {
+      // Fallback sur HF si pas de service local
+      this.useHuggingFace = true;
+      this.logger.log(`💻 MODE DEV : Pas de service local → Hugging Face`);
       this.logger.log(`   HF VTO URL: ${this.hfVtoUrl}`);
       this.initializeGradioClient();
-    } else {
-      this.logger.log(`💻 Mode DÉVELOPPEMENT : Utilisation Python local`);
-      this.logger.log(`   Local VTO URL: ${this.localVtoUrl}`);
-      this.checkLocalHealth();
     }
   }
+}
 
   /**
    * Initialise le client Gradio (Hugging Face)
