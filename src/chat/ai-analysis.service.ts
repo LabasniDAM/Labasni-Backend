@@ -36,14 +36,30 @@ export class AiAnalysisService {
   }
 
   /**
-   * 🚨 MAIN MODERATION FUNCTION - Blocks messages with prohibited content
+   * 🚨 MAIN MODERATION FUNCTION - Blocks only links (URLs) and badwords (profanity)
+   * Everything else is allowed
    */
   async moderateMessage(content: string, hasCompletedPurchase: boolean = false): Promise<ModerationResult> {
     const extractedInfo = await this.analyzeMessage(content);
     const violations: string[] = [];
 
-    // If user hasn't completed a purchase, strict moderation
-    if (!hasCompletedPurchase) {
+    // ✨ NOUVELLE RÈGLE : Bloquer uniquement les liens (URLs) et les gros mots (badwords)
+    // Tout le reste est autorisé (numéros de téléphone, adresses, emails, réseaux sociaux, etc.)
+    // Suppression de la condition hasCompletedPurchase car on autorise tout sauf URLs et profanity
+    
+    // Check for external URLs (always blocked)
+    if (extractedInfo.urls && extractedInfo.urls.length > 0) {
+      violations.push('Les liens (URLs) ne sont pas autorisés');
+    }
+
+    // Check for profanity (always blocked)
+    if (extractedInfo.profanity && extractedInfo.profanity.length > 0) {
+      violations.push('Les gros mots et le langage offensant ne sont pas autorisés');
+    }
+
+    // Everything else is allowed (phone numbers, addresses, emails, social media, etc.)
+    // Ancien code désactivé - tout est autorisé sauf URLs et profanity
+    /*
       // Check for phone numbers (any format)
       if (extractedInfo.phoneNumbers && extractedInfo.phoneNumbers.length > 0) {
         violations.push('Phone numbers are not allowed before completing a purchase');
@@ -79,11 +95,7 @@ export class AiAnalysisService {
         violations.push('Social media handles are not allowed before completing a purchase');
       }
     }
-
-    // Check for profanity (always blocked, regardless of purchase status)
-    if (extractedInfo.profanity && extractedInfo.profanity.length > 0) {
-      violations.push('Profanity and offensive language are not allowed');
-    }
+    */
 
     return {
       isAllowed: violations.length === 0,
@@ -105,54 +117,44 @@ export class AiAnalysisService {
     try {
       const model = this.genAI.getGenerativeModel({ model: 'gemini-pro' });
       
-      const prompt = `Tu es un système de modération EXTREMEMENT strict pour un chat de marketplace en Tunisie. 
-Ton objectif unique : EMPÊCHER à 100% toute tentative de transaction ou contact en dehors de la plateforme.
+      const prompt = `Tu es un système de modération SIMPLE pour un chat de marketplace.
+Ton objectif : DÉTECTER UNIQUEMENT les liens (URLs) et les gros mots (badwords).
 
-Tu dois détecter :
-- Tout numéro de téléphone (quel que soit le format, même éclaté sur plusieurs messages)
-- Toute demande ou proposition de contact externe (WhatsApp, Telegram, Instagram, appel, SMS, etc.)
-- Toute proposition de rencontre physique ("on se voit où", "je passe te livrer", "rdv à...", "viens chez moi", etc.)
-- Toute adresse, même partielle
-- Tout email, lien, pseudo réseau social
-- TOUT gros mot, insulte, harcèlement sexuel, langage vulgaire ou offensant dans N'IMPORTE QUELLE LANGUE ou dialecte (arabe tunisien, français, anglais, arabe standard, italien, espagnol, etc.)
-- Toute obfuscation créative (espaces, points, émoticônes, mots séparés, chiffres en toutes lettres dans n'importe quelle langue, censuré avec *, chiffres arabes orientaux ٠١٢٣٤٥٦٧٨٩, etc.)
+RÈGLES SIMPLES :
 
-RÈGLES ULTRA-STRICTES :
+1. LIENS (URLs) → Détecter TOUS les liens :
+   - URLs complètes : "https://example.com", "http://site.tn", "www.example.com"
+   - URLs courtes : "bit.ly/xxx", "t.co/xxx", "tinyurl.com/xxx"
+   - Liens avec protocole : "https://", "http://", "ftp://"
+   - Liens sans protocole mais avec domaine : "example.com/page", "site.tn/article"
+   - Liens de réseaux sociaux : "instagram.com/xxx", "facebook.com/xxx", "twitter.com/xxx", "t.me/xxx", "wa.me/xxx"
+   - Toute URL, même partielle ou obfusquée
 
-1. Numéros de téléphone → flag TOUT ce qui peut en être une partie :
-   - Chiffres seuls : "59859", "123", "898 123", "06", "71", "22" (même 2-3 chiffres si dans un contexte suspect)
-   - Toutes lettres : "zéro six douze trente quatre cinquante six soixante dix huit", "six un deux trois...", "setta tlet wahed...", "sittah wahed ithnan..."
-   - Mélangé : "zero six 12 34 56 78", "06.12.34.56.78", "+216 suivi de..."
-   - Continuation explicite : "la suite", "le reste", "les derniers chiffres", "comme je t'ai dit avant", "tu te rappelles le début"
-   - Si le message contient seulement des chiffres ou presque → c'est forcément une partie de numéro
-
-2. Demande de contact externe / sortie de plateforme :
-   Flagger TOUT ce qui ressemble à :
-   - "donne ton num", "3tini numrek", "ektebli numrek", "passe-moi ton WhatsApp", "on continue sur Insta ?", "tu as Telegram ?", "add me", "je t'appelle", "appelle-moi", "contacte-moi en privé", "on peut parler ailleurs", "sortons d'ici", "passe en DM", "je t'envoie mon numéro en privé", etc.
-   - Toute mention de WhatsApp/Telegram/Signal/Viber/Snapchat/Instagram/Facebook/TikTok en contexte de contact
-
-3. Rencontre physique :
-   Flagger immédiatement :
-   - "on se voit où", "je peux passer", "tu peux venir", "rdv à", "je te livre en main propre", "main à main", "je suis à [ville/quarter]", "près de Carrefour/Monoprix/la mosquée/le souk", "viens chez moi", "je viens chez toi", "on se capte à...", etc.
-
-4. Gros mots / insultes / harcèlement → TOUTES les langues :
+2. GROS MOTS / INSULTES / HARCELLEMENT → TOUTES les langues :
    Tu DOIS détecter tout langage vulgaire, sexuel, insultant, menace, harcèlement, même censuré, même avec émoticônes.
-   Exemples particulièrement graves en tunisien (flag à 100%) : kahba/ka7ba/9ahba/9a7ba, zebi/zbi/zeb, kess/kiss/kes, omek/ommak/emmek, khra/5ra/khra, 7mar/7mar, etc. + toutes les variantes avec chiffres.
-   Mais aussi : putain, fils de pute, enculé, salope, fuck, motherfucker, bitch, hijo de puta, figlio di puttana, sharmouta, etc.
+   Exemples en tunisien : kahba/ka7ba/9ahba/9a7ba, zebi/zbi/zeb, kess/kiss/kes, omek/ommak/emmek, khra/5ra/khra, 7mar/7mar, etc. + toutes les variantes avec chiffres.
+   Exemples en français : putain, fils de pute, enculé, salope, connard, merde (dans un contexte insultant), etc.
+   Exemples en anglais : fuck, motherfucker, bitch, asshole, shit (dans un contexte insultant), etc.
+   Exemples en autres langues : hijo de puta (espagnol), figlio di puttana (italien), sharmouta (arabe), etc.
    → Si tu as le moindre doute → flag.
+
+IMPORTANT : TOUT LE RESTE EST AUTORISÉ :
+- Numéros de téléphone → AUTORISÉ
+- Adresses → AUTORISÉ
+- Emails → AUTORISÉ
+- Réseaux sociaux (mentions sans liens) → AUTORISÉ
+- Contacts externes → AUTORISÉ
+- Rencontres physiques → AUTORISÉ
+- Tout autre contenu → AUTORISÉ
 
 SORTIE JSON OBLIGATOIRE (exactement ce format, rien d'autre, pas de markdown) :
 
 {
-  "phoneNumbers": ["+216 98 123 456", "zero six douze trente quatre..."],
-  "addresses": ["près de Carrefour La Marsa", "Avenue Habib Bourguiba"],
-  "emails": ["test@gmail.com"],
-  "urls": ["https://t.me/xxx"],
-  "socialMedia": ["@insta.handle", "mon Snap : xxx"],
-  "externalContacts": ["donne-moi ton numéro", "on continue sur WhatsApp", "ektebli numrek", "rdv à Monoprix"],
-  "profanity": ["kahba", "fils de pute", "putain", "fuck you"],
-  "obfuscatedContacts": ["06 12 34 56 78", "59859", "la suite c'est 898 123", "zéro six douze..."]
+  "urls": ["https://example.com", "www.site.tn", "t.me/username"],
+  "profanity": ["gros mot détecté", "insulte détectée"]
 }
+
+Note : Les autres champs (phoneNumbers, addresses, emails, socialMedia, externalContacts, obfuscatedContacts) ne sont plus nécessaires car ils sont maintenant autorisés.
 
 MESSAGE À ANALYSER :
 "${content.replace(/"/g, '\\"')}"
