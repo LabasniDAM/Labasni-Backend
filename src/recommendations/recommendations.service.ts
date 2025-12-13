@@ -9,11 +9,10 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
-import { firstValueFrom } from 'rxjs';
 import { Clothes, ClothesDocument } from 'src/clothes/schemas/clothes.schema';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
+import { Client } from '@gradio/client';
 
 @Injectable()
 export class RecommendationsService {
@@ -23,7 +22,6 @@ export class RecommendationsService {
   constructor(
     @InjectModel(Clothes.name) private clothesModel: Model<ClothesDocument>,
     private subscriptionsService: SubscriptionsService,
-    private readonly httpService: HttpService,
     private readonly configService: ConfigService,
   ) {
     this.hfRecommenderUrl = this.configService.get<string>('HF_RECOMMENDER_URL')!;
@@ -140,94 +138,12 @@ export class RecommendationsService {
         );
       }
 
-      // 4. ✅ APPEL HUGGING FACE - Endpoint confirmé par test
-      const baseUrl = this.hfRecommenderUrl.replace(/\/$/, '');
-      
-      // ✅ Endpoint confirmé par votre test Gradio Client
-      const apiUrl = `${baseUrl}/api/predict`;
-      
-      // ✅ Payload exact confirmé par le test
-      const payload = {
-        data: [
-          JSON.stringify(clothesData), // Paramètre 1: clothes_json (string JSON)
-          normalizedPreference,         // Paramètre 2: preference
-          cityParam,                    // Paramètre 3: city
-        ],
-      };
-
-      this.logger.log(`📡 Appel Hugging Face API: ${apiUrl}`);
-      this.logger.log(`   Payload size: ${JSON.stringify(payload).length} chars`);
-      this.logger.debug(`   Payload preview: ${JSON.stringify(payload).substring(0, 200)}...`);
-
-      let hfResult: any = null;
-
-      try {
-        // ✅ Appel HTTP avec le format exact qui fonctionne
-        const response = await firstValueFrom(
-          this.httpService.post(apiUrl, payload, {
-            timeout: 30000, // 30 secondes
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            validateStatus: (status) => status === 200,
-          }),
-        );
-
-        this.logger.log(`✅ Réponse reçue (Status: ${response.status})`);
-
-        // ✅ Parser la réponse Gradio
-        // Format: { data: ["json_string"], duration: 1.234 }
-        const responseData = response.data;
-        
-        if (responseData?.data && Array.isArray(responseData.data)) {
-          const resultString = responseData.data[0];
-          hfResult = JSON.parse(resultString);
-          
-          this.logger.log(`✅ Réponse ML parsée avec succès`);
-          this.logger.log(`   Success: ${hfResult.success}`);
-          
-          if (hfResult.weather) {
-            this.logger.log(`   Météo: ${hfResult.weather.temperature}°C, ${hfResult.weather.condition}`);
-          }
-        } else {
-          this.logger.error(`❌ Format de réponse inattendu: ${JSON.stringify(responseData)}`);
-          throw new Error('Format de réponse Hugging Face invalide');
-        }
-
-      } catch (error: any) {
-        const statusCode = error.response?.status || error.code;
-        const errorMessage = error.response?.data?.error || error.message;
-
-        this.logger.error(`❌ Erreur Hugging Face API (${statusCode}): ${errorMessage}`);
-
-        // Erreurs spécifiques
-        if (error.code === 'ECONNABORTED') {
-          throw new HttpException(
-            'Le service de recommandation prend trop de temps. Réessayez dans quelques secondes.',
-            HttpStatus.REQUEST_TIMEOUT,
-          );
-        }
-
-        if (statusCode === 404) {
-          throw new HttpException(
-            'Le service de recommandation est introuvable. Vérifiez la configuration HF_RECOMMENDER_URL.',
-            HttpStatus.SERVICE_UNAVAILABLE,
-          );
-        }
-
-        if (error.code === 'ECONNREFUSED' || statusCode === 503) {
-          throw new HttpException(
-            'Le service de recommandation est actuellement indisponible. Vérifiez que votre Space Hugging Face est Running.',
-            HttpStatus.SERVICE_UNAVAILABLE,
-          );
-        }
-
-        // Autres erreurs
-        throw new HttpException(
-          `Erreur lors de la communication avec le service ML: ${errorMessage}`,
-          HttpStatus.BAD_GATEWAY,
-        );
-      }
+      // 4. ✅ APPEL HUGGING FACE via Gradio Client
+      const hfResult = await this.callHuggingFaceAPI(
+        clothesData,
+        normalizedPreference,
+        cityParam,
+      );
 
       // 5. Vérifier le résultat
       if (!hfResult) {
@@ -319,6 +235,105 @@ export class RecommendationsService {
 
       // Autres erreurs
       throw new BadRequestException(`Recommendation failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * ✅ Appel Hugging Face via Gradio Client (même protocole que le test Python)
+   */
+  private async callHuggingFaceAPI(
+    clothesData: any[],
+    preference: string,
+    city: string,
+  ): Promise<any> {
+    this.logger.log(`📡 Connecting to Gradio Space...`);
+    
+    try {
+      // ✅ Extraire le Space ID depuis l'URL
+      // https://syleto-recommender.hf.space → Syleto/recommender
+      const spaceId = this.hfRecommenderUrl
+        .replace('https://', '')
+        .replace('.hf.space', '')
+        .replace('syleto-recommender', 'Syleto/recommender');
+      
+      this.logger.log(`   Space ID: ${spaceId}`);
+      
+      // ✅ Connexion au Space (même méthode que Python)
+      const client = await Client.connect(spaceId);
+      this.logger.log(`✅ Connected to Gradio Space`);
+      
+      // ✅ Préparer les données (format identique au test Python)
+      const clothesJson = JSON.stringify(clothesData);
+      
+      this.logger.log(`   Calling predict with ${clothesData.length} items...`);
+      this.logger.debug(`   Preference: ${preference}, City: ${city}`);
+      
+      // ✅ Appel de la fonction predict (même signature que Python)
+      const result = await client.predict('/predict', {
+        clothes_json: clothesJson,
+        preference: preference,
+        city: city,
+      });
+      
+      this.logger.log(`✅ Prediction received from Gradio`);
+      
+      // ✅ Parser le résultat
+      if (result && result.data) {
+        // Le résultat peut être directement dans data ou data[0]
+        const resultData = Array.isArray(result.data) ? result.data[0] : result.data;
+        
+        // Si c'est une string JSON, la parser
+        const parsed = typeof resultData === 'string' 
+          ? JSON.parse(resultData) 
+          : resultData;
+        
+        this.logger.log(`   Success: ${parsed.success}`);
+        
+        if (parsed.weather) {
+          this.logger.log(`   Météo: ${parsed.weather.temperature}°C, ${parsed.weather.condition}`);
+        }
+        
+        if (parsed.season) {
+          this.logger.log(`   Saison: ${parsed.season}`);
+        }
+        
+        return parsed;
+      }
+      
+      throw new Error('Invalid response format from Gradio');
+      
+    } catch (error: any) {
+      this.logger.error(`❌ Gradio Client Error: ${error.message}`);
+      
+      // Erreurs de connexion
+      if (error.message.includes('Connection') || error.message.includes('connect')) {
+        throw new HttpException(
+          'Cannot connect to ML service. Please verify the Space is Running on Hugging Face.',
+          HttpStatus.SERVICE_UNAVAILABLE,
+        );
+      }
+      
+      // Erreur de Space ID
+      if (error.message.includes('Space') || error.message.includes('not found')) {
+        throw new HttpException(
+          `ML Space not found. Please verify HF_RECOMMENDER_URL is correct: ${this.hfRecommenderUrl}`,
+          HttpStatus.SERVICE_UNAVAILABLE,
+        );
+      }
+      
+      // Erreur d'API
+      if (error.message.includes('predict')) {
+        throw new HttpException(
+          'ML prediction failed. The Space may be starting up. Please try again in a few seconds.',
+          HttpStatus.SERVICE_UNAVAILABLE,
+        );
+      }
+      
+      // Autres erreurs
+      throw new HttpException(
+        `ML service error: ${error.message}`,
+        HttpStatus.BAD_GATEWAY,
+      );
     }
   }
 
