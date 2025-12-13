@@ -70,47 +70,12 @@ export class ClothController {
 
     const clothes = await this.clothService.findAllByUser(user.id);
     
-    // ✅ Optimisation activée avec API Cloudinary (plus fiable)
+    // 🔴 OPTIMISATION DÉSACTIVÉE - Retour des URLs originales pour restaurer les images
+    // TODO: Réactiver l'optimisation une fois le problème résolu
+    console.log(`⚠️ [getMyClothes] Optimisation DÉSACTIVÉE - Retour des URLs originales (${clothes.length} vêtements)`);
     
-    console.log(`🔄 [getMyClothes] Optimisation de ${clothes.length} vêtements...`);
-    
-    // 🔥 OPTIMISER LES URLs AVANT DE RENVOYER
-    const optimizedClothes = clothes.map((cloth, index) => {
-      const clothObj = JSON.parse(JSON.stringify(cloth)); // Convertir en objet plain
-      
-      const originalImageURL = clothObj.imageURL;
-      const originalProcessedURL = clothObj.processedImageURL;
-      
-      const optimizedImageURL = clothObj.imageURL && clothObj.imageURL.includes('cloudinary.com') 
-        ? this.getOptimizedCloudinaryUrl(clothObj.imageURL)
-        : clothObj.imageURL;
-      
-      const optimizedProcessedURL = clothObj.processedImageURL && clothObj.processedImageURL.includes('cloudinary.com')
-        ? this.getOptimizedCloudinaryUrl(clothObj.processedImageURL)
-        : clothObj.processedImageURL;
-      
-      // Log seulement pour le premier vêtement pour éviter le spam
-      if (index === 0) {
-        console.log(`📊 [getMyClothes] Exemple d'optimisation (vêtement 1/${clothes.length}):`);
-        console.log(`   imageURL originale: ${originalImageURL?.substring(0, 80)}...`);
-        console.log(`   imageURL optimisée: ${optimizedImageURL?.substring(0, 80)}...`);
-        if (optimizedImageURL?.includes('f_auto')) {
-          console.log('   ✅ URL optimisée avec transformations Cloudinary');
-        } else if (optimizedImageURL === originalImageURL) {
-          console.log('   ⚠️ URL retournée telle quelle (fallback ou déjà optimisée)');
-        }
-      }
-      
-      return {
-        ...clothObj,
-        imageURL: optimizedImageURL,
-        processedImageURL: optimizedProcessedURL,
-      };
-    });
-
-    console.log(`✅ [getMyClothes] ${optimizedClothes.length} vêtements optimisés et renvoyés`);
-    
-    return optimizedClothes;
+    const plainClothes = clothes.map(cloth => JSON.parse(JSON.stringify(cloth)));
+    return plainClothes;
   }
 
   /**
@@ -161,13 +126,9 @@ async getVTOReadyClothes(@GetUser() user: any) {
     }
     acc[category].push({
       id: cloth._id,
-      // 🔥 OPTIMISER LES URLs
-      imageURL: cloth.imageURL?.includes('cloudinary.com')
-        ? this.getOptimizedCloudinaryUrl(cloth.imageURL)
-        : cloth.imageURL,
-      processedImageURL: cloth.processedImageURL?.includes('cloudinary.com')
-        ? this.getOptimizedCloudinaryUrl(cloth.processedImageURL)
-        : cloth.processedImageURL,
+      // 🔴 OPTIMISATION DÉSACTIVÉE - URLs originales
+      imageURL: cloth.imageURL,
+      processedImageURL: cloth.processedImageURL,
       category: cloth.category,
       color: cloth.color,
       style: cloth.style,

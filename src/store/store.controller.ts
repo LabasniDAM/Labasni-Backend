@@ -53,8 +53,8 @@ export class StoreController {
   @Get()
   @ApiOperation({ summary: 'Tous les articles en vente' })
   async findAll(): Promise<Store[]> {
-    const stores = await this.storeService.findAll();
-    return stores.map(store => this.optimizeStoreUrls(store));
+    // 🔴 OPTIMISATION DÉSACTIVÉE - Retour des URLs originales
+    return this.storeService.findAll();
   }
 
   // GET MY STORE ITEMS
@@ -62,8 +62,8 @@ export class StoreController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Mes articles en vente' })
   async findMyStore(@GetUser() user: any): Promise<Store[]> {
-    const stores = await this.storeService.findByUserId(user.id);
-    return stores.map(store => this.optimizeStoreUrls(store));
+    // 🔴 OPTIMISATION DÉSACTIVÉE - Retour des URLs originales
+    return this.storeService.findByUserId(user.id);
   }
 
   // GET ONE
@@ -71,8 +71,8 @@ export class StoreController {
   @ApiOperation({ summary: 'Détail d\'un article' })
   @ApiParam({ name: 'id', description: 'ID du Store item' })
   async findOne(@Param('id') id: string): Promise<Store> {
-    const store = await this.storeService.findOne(id);
-    return this.optimizeStoreUrls(store);
+    // 🔴 OPTIMISATION DÉSACTIVÉE - Retour des URLs originales
+    return this.storeService.findOne(id);
   }
 
   // UPDATE
