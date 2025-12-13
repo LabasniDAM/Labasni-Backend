@@ -5,129 +5,135 @@ import {
   UploadedFile,
   UseInterceptors,
   BadRequestException,
+  UseGuards,
+  Logger,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { extname, join } from 'path';
-import { exec } from 'child_process';
-import { promisify } from 'util';
 import { v2 as cloudinary } from 'cloudinary';
-import * as fs from 'fs';
-import { executePythonCommand, findPythonExecutable } from '../common/python-executor';
-
-const execAsync = promisify(exec);
+import { DetectionService, DetectionResult } from './services/detection.service';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { GetUser } from '../common/decorators/get-user.decorator';
+import { ClothesService } from './clothes.service';
+import { Clothes } from './schemas/clothes.schema'; // ✅ Import Clothes (pas ClothesDocument)
 
 @Controller('detect')
+@UseGuards(JwtAuthGuard)
 export class DetectController {
+  private readonly logger = new Logger(DetectController.name);
+
+  constructor(
+    private readonly detectionService: DetectionService,
+    private readonly clothesService: ClothesService,
+  ) {}
+
   @Post()
   @UseInterceptors(
     FileInterceptor('photo', {
-      storage: diskStorage({
-        destination: './temp_uploads',
-        filename: (req, file, cb) => {
-          const randomName = Array(32)
-            .fill(null)
-            .map(() => Math.round(Math.random() * 16).toString(16))
-            .join('');
-          cb(null, `${randomName}${extname(file.originalname)}`);
-        },
-      }),
+      limits: {
+        fileSize: 10 * 1024 * 1024,
+      },
+      fileFilter: (req, file, cb) => {
+        if (!file.mimetype.match(/\/(jpg|jpeg|png|gif)$/)) {
+          return cb(new BadRequestException('Seules les images sont acceptées'), false);
+        }
+        cb(null, true);
+      },
     }),
   )
-  async detect(@UploadedFile() file: Express.Multer.File) {
+  async detect(
+    @UploadedFile() file: Express.Multer.File,
+    @GetUser() user: any,
+  ): Promise<{
+    success: boolean;
+    message: string;
+    cloth: any;
+    image_url: string;
+    public_id: string;
+    detection: DetectionResult;
+  }> {
     if (!file) {
       throw new BadRequestException('Photo requise');
     }
 
-    const tempPath = file.path;
-    const noBgPath = tempPath.replace(extname(tempPath), '_nobg.png');
+    if (!user?.id) {
+      throw new BadRequestException('Utilisateur non authentifié');
+    }
+
+    this.logger.log(`📸 Nouvelle détection pour user ${user.id}`);
 
     try {
-      console.log('📸 Image reçue:', tempPath);
+      // ÉTAPE 1 : Détection via Hugging Face
+      this.logger.log('🤖 Appel Hugging Face...');
+      const detection = await this.detectionService.detectCloth(
+        file.buffer,
+        file.originalname,
+      );
 
-      // ✨ ÉTAPE 1 : Supprime le background via API
-      console.log('🔄 Suppression du background via API remove.bg...');
-      
-      const removeBgScriptPath = join(process.cwd(), 'AI-Models', 'remove_bg_api.py');
-      const tempPathAbs = join(process.cwd(), tempPath);
-      const noBgPathAbs = join(process.cwd(), noBgPath);
-      
-      try {
-        const pythonExec = await findPythonExecutable();
-        const { stdout, stderr } = await execAsync(
-          `"${pythonExec}" "${removeBgScriptPath}" --input "${tempPathAbs}" --output "${noBgPathAbs}"`,
+      // ÉTAPE 2 : Upload sur Cloudinary
+      this.logger.log('☁️ Upload Cloudinary...');
+      const uploadResult = await new Promise<any>((resolve, reject) => {
+        const uploadStream = cloudinary.uploader.upload_stream(
           {
-            env: {
-              ...process.env,
-              PYTHONUNBUFFERED: '1',
-              PYTHONPATH: join(process.cwd(), 'AI-Models'),
-            },
+            folder: 'labasni/clothes',
+            format: 'png',
+            resource_type: 'image',
+          },
+          (error, result) => {
+            if (error) return reject(error);
+            resolve(result);
           },
         );
-        
-        console.log('✅ Background supprimé:', noBgPath);
-        
-        // Affiche les crédits restants (si disponible dans stdout)
-        if (stdout.includes('Crédits restants')) {
-          console.log(stdout.trim());
-        }
-      } catch (bgError: any) {
-        console.error('❌ Erreur background removal:', bgError.stderr || bgError.message);
-        
-        // Si l'API échoue, on utilise l'image originale
-        console.warn('⚠️ Fallback : utilisation de l\'image originale');
-        fs.copyFileSync(tempPath, noBgPath);
-      }
 
-      // ✨ ÉTAPE 2 : Upload l'image SANS background sur Cloudinary
-      console.log('☁️ Upload Cloudinary...');
-      const uploadResult = await cloudinary.uploader.upload(noBgPath, {
-        folder: 'labasni',
-        format: 'png', // Force PNG pour garder transparence
-        resource_type: 'image',
+        const { Readable } = require('stream');
+        const stream = Readable.from(file.buffer);
+        stream.pipe(uploadStream);
       });
-      console.log('✅ Upload terminé:', uploadResult.secure_url);
 
-      // ✨ ÉTAPE 3 : Détection IA sur l'image ORIGINALE
-      // (La détection marche mieux avec le contexte du background)
-      console.log('🤖 Détection IA...');
-      const detectScriptPath = join(process.cwd(), 'AI-Models', 'detect.py');
-      const aiModelsDir = join(process.cwd(), 'AI-Models');
-      
-      // Utiliser le Python avec TensorFlow disponible
-      const pythonExec = await findPythonExecutable();
-      const { stdout: detectionOutput } = await execAsync(
-        `cd "${aiModelsDir}" && "${pythonExec}" detect.py --image "${tempPathAbs}"`,
-        {
-          env: {
-            ...process.env,
-            PYTHONUNBUFFERED: '1',
-            PYTHONPATH: join(process.cwd(), 'AI-Models'),
-          },
-        },
-      );
-      console.log('✅ Détection terminée');
+      this.logger.log(`✅ Upload terminé: ${uploadResult.secure_url}`);
 
-      // ✨ NETTOYAGE : Supprime fichiers temporaires
-      if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-      if (fs.existsSync(noBgPath)) fs.unlinkSync(noBgPath);
+      // ÉTAPE 3 : Sauvegarder dans la base de données
+      this.logger.log('💾 Sauvegarde en base de données...');
+      const cloth: Clothes = await this.clothesService.create({ // ✅ Type Clothes (pas ClothesDocument)
+        userId: user.id,
+        imageURL: uploadResult.secure_url,
+        category: detection.type,
+        color: detection.color,
+        style: detection.style,
+        season: detection.season,
+        processingStatus: 'pending',
+      });
 
-      // ✨ RETOUR : Image sans BG + Détections
+      // ✅ Conversion sécurisée de _id en string
+      const clothId = (cloth as any)._id ? String((cloth as any)._id) : 'unknown';
+      this.logger.log(`✅ Vêtement créé: ${clothId}`);
+
+      // RETOUR
       return {
         success: true,
-        image_url: uploadResult.secure_url, // ← Image SANS background
+        message: 'Vêtement détecté et sauvegardé avec succès',
+        cloth: {
+          id: clothId, // ✅ Utilisation de la variable convertie
+          imageURL: cloth.imageURL,
+          category: cloth.category,
+          color: cloth.color,
+          style: cloth.style,
+          season: cloth.season,
+          processingStatus: cloth.processingStatus,
+        },
+        image_url: uploadResult.secure_url,
         public_id: uploadResult.public_id,
-        detection_result: detectionOutput.trim(),
-        background_removed: true,
+        detection: detection,
       };
-    } catch (err: any) {
-      // Nettoyage en cas d'erreur
-      if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-      if (fs.existsSync(noBgPath)) fs.unlinkSync(noBgPath);
 
-      console.error('❌ Erreur complète:', err);
+    } catch (error: any) {
+      this.logger.error('❌ Erreur complète:', error.message);
+      
+      if (error.response) {
+        this.logger.error('Réponse API:', error.response.data);
+      }
+
       throw new BadRequestException(
-        err.message || 'Erreur lors de la détection',
+        error.message || 'Erreur lors de la détection',
       );
     }
   }
