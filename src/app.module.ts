@@ -40,12 +40,16 @@ import { AIEngineModule } from './ai-engine/ai-engine.module';
         GOOGLE_CLIENT_SECRET: Joi.string().required(),
         GOOGLE_CALLBACK_URL: Joi.string().required(),
 
-        // EMAIL
-        EMAIL_HOST: Joi.string().required(),
-        EMAIL_PORT: Joi.number().default(587),
-        EMAIL_USER: Joi.string().email().required(),
-        EMAIL_PASS: Joi.string().required(),
-        EMAIL_FROM: Joi.string().required(),
+        // EMAIL (Brevo)
+        BREVO_API_KEY: Joi.string().required(),
+        EMAIL_FROM: Joi.string().optional().default('Labasni <noreply@labasni.com>'),
+        EMAIL_FROM_ADDRESS: Joi.string().email().optional(),
+        
+        // Les anciennes variables SMTP sont maintenant optionnelles (pour compatibilité)
+        EMAIL_HOST: Joi.string().optional(),
+        EMAIL_PORT: Joi.number().optional(),
+        EMAIL_USER: Joi.string().email().optional(),
+        EMAIL_PASS: Joi.string().optional(),
 
         // TWILIO
         TWILIO_ACCOUNT_SID: Joi.string().required(),

@@ -7,7 +7,7 @@ import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { LocalStrategy } from './strategies/local.strategy';
 import { JWT_SECRET, JWT_SIGN_OPTIONS } from './auth.constants';
-import { MailerCustomModule } from 'src/mail/mailer.module';
+import { EmailService } from './email.service';
 import { GoogleStrategy } from './strategies/google.strategy';
 import { HttpModule } from '@nestjs/axios';
 import { AppleStrategy } from './strategies/apple.strategy';
@@ -23,13 +23,12 @@ import { SubscriptionsModule } from 'src/subscriptions/subscriptions.module';
       secret: JWT_SECRET,
       signOptions: JWT_SIGN_OPTIONS,
     }),
-    MailerCustomModule,
     HttpModule,
     CloudinaryModule,
     SubscriptionsModule, // <-- AJOUTÉ
   ],
   controllers: [AuthController],
-  providers: [AuthService, LocalStrategy, JwtStrategy, GoogleStrategy, AppleStrategy, TwilioService],
+  providers: [AuthService, LocalStrategy, JwtStrategy, GoogleStrategy, AppleStrategy, TwilioService, EmailService],
   exports: [AuthService],
 })
 export class AuthModule {}

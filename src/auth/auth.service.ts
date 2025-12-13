@@ -26,7 +26,7 @@ import { UpdateProfileDto } from './dto/update-profile.dto';
 import { GoogleAuthDto } from './dto/google-auth.dto';
 import { AppleAuthDto } from './dto/apple-auth.dto';
 import { randomInt } from 'crypto';
-import { MailerService } from '@nestjs-modules/mailer';
+import { EmailService } from './email.service';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
@@ -57,7 +57,7 @@ export class AuthService {
   constructor(
     private readonly userService: UserService,
     private readonly jwtService: JwtService,
-    private readonly mailerService: MailerService,
+    private readonly emailService: EmailService,
     private readonly httpService: HttpService,
     private readonly twilioService: TwilioService,
     private readonly cloudinaryService: CloudinaryService,
@@ -223,12 +223,12 @@ export class AuthService {
     `;
 
     try {
-      await this.mailerService.sendMail({
-        to: signupDto.email,
-        subject: emailSubject,
-        text: emailText,
-        html: emailHtml,
-      });
+      await this.emailService.sendEmail(
+        signupDto.email,
+        emailSubject,
+        emailHtml,
+        emailText
+      );
     } catch (error) {
       console.error('Échec envoi email:', error);
       throw new InternalServerErrorException('Échec envoi email');

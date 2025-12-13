@@ -28,6 +28,7 @@
     "python:list": "pip3 list | grep -E '(numpy|torch|tensorflow|opencv|mediapipe)'"
   },
   "dependencies": {
+    "@getbrevo/brevo": "^3.0.1",
     "@google/generative-ai": "^0.24.1",
     "@gradio/client": "^2.0.0",
     "@nestjs-modules/mailer": "^2.0.2",
