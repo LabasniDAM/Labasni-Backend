@@ -25,32 +25,18 @@ import {
   ApiParam,
   ApiBearerAuth,
 } from '@nestjs/swagger';
-import { ConfigService } from '@nestjs/config';
 import { ClothesService } from './clothes.service';
 import { CreateClotheDto } from './dto/create-clothe.dto';
 import { UpdateClotheDto } from './dto/update-clothe.dto';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
 import { GetUser } from 'src/common/decorators/get-user.decorator';
-import { v2 as cloudinary } from 'cloudinary';
 
 @ApiTags('Clothes')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
 @Controller('clothes')
 export class ClothController {
-  constructor(
-    private readonly clothService: ClothesService,
-    private readonly configService: ConfigService,
-  ) {
-    // Initialiser Cloudinary si pas déjà fait
-    if (!cloudinary.config().cloud_name) {
-      cloudinary.config({
-        cloud_name: this.configService.get<string>('CLOUDINARY_CLOUD_NAME'),
-        api_key: this.configService.get<string>('CLOUDINARY_API_KEY'),
-        api_secret: this.configService.get<string>('CLOUDINARY_API_SECRET'),
-      });
-    }
-  }
+  constructor(private readonly clothService: ClothesService) {}
 
   // ==========================================
   // ROUTES VTO - NOUVELLES (EN PREMIER)
@@ -69,13 +55,7 @@ export class ClothController {
     }
 
     const clothes = await this.clothService.findAllByUser(user.id);
-    
-    // 🔴 OPTIMISATION DÉSACTIVÉE - Retour des URLs originales pour restaurer les images
-    // TODO: Réactiver l'optimisation une fois le problème résolu
-    console.log(`⚠️ [getMyClothes] Optimisation DÉSACTIVÉE - Retour des URLs originales (${clothes.length} vêtements)`);
-    
-    const plainClothes = clothes.map(cloth => JSON.parse(JSON.stringify(cloth)));
-    return plainClothes;
+    return clothes; // Retourne directement le tableau pour compatibilité iOS
   }
 
   /**
@@ -119,6 +99,7 @@ async getVTOReadyClothes(@GetUser() user: any) {
 
   const clothes = await this.clothService.findReadyForVTO(user.id);
 
+  // ✅ CORRECTION : Retourner directement l'objet groupé sans wrapper
   const grouped = clothes.reduce((acc, cloth) => {
     const category = cloth.category.toLowerCase();
     if (!acc[category]) {
@@ -126,19 +107,19 @@ async getVTOReadyClothes(@GetUser() user: any) {
     }
     acc[category].push({
       id: cloth._id,
-      // 🔴 OPTIMISATION DÉSACTIVÉE - URLs originales
       imageURL: cloth.imageURL,
       processedImageURL: cloth.processedImageURL,
       category: cloth.category,
       color: cloth.color,
       style: cloth.style,
       season: cloth.season,
-      processingStatus: cloth.processingStatus,
-      isProcessed: cloth.isProcessed,
+      processingStatus: cloth.processingStatus,  // ✅ Ajouté
+      isProcessed: cloth.isProcessed,            // ✅ Ajouté
     });
     return acc;
   }, {});
 
+  // ✅ Pas de wrapper { success, data, etc. }
   return grouped;
 }
 
@@ -223,18 +204,6 @@ async getVTOReadyClothes(@GetUser() user: any) {
   @ApiOperation({ summary: 'Statistiques globales des corrections' })
   async getGlobalStats() {
     return await this.clothService.getGlobalCorrectionStats(); // Retourne directement l'objet stats
-  }
-
-  @Get('cache-stats')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Statistiques cache Cloudinary' })
-  async getCacheStats() {
-    return {
-      cloudinaryOptimizationsEnabled: !!process.env.CLOUDINARY_CLOUD_NAME,
-      cloudName: process.env.CLOUDINARY_CLOUD_NAME || 'NOT_SET',
-      transformations: 'f_auto,q_auto:good,w_800,c_limit,fl_progressive',
-      expectedReduction: '80-90%',
-    };
   }
 
   @Get('stats/me')
@@ -380,67 +349,4 @@ async getVTOProcessingStatus(@GetUser() user: any) {
   
   return stats;
 }
-
-  /**
-   * 🔧 Optimise une URL Cloudinary pour chargement rapide sur mobile
-   * Méthode SIMPLE : Insère les transformations directement dans l'URL existante
-   * ⚠️ IMPORTANT : Si l'optimisation échoue, retourne l'URL originale pour éviter de casser les images
-   */
-  private getOptimizedCloudinaryUrl(originalUrl: string): string {
-    // Si pas d'URL ou pas Cloudinary, retourner tel quel
-    if (!originalUrl || typeof originalUrl !== 'string' || !originalUrl.includes('cloudinary.com')) {
-      return originalUrl;
-    }
-
-    try {
-      // Si l'URL contient déjà des transformations, ne pas la modifier
-      if (originalUrl.includes('/f_auto') || originalUrl.includes('/q_auto')) {
-        return originalUrl;
-      }
-
-      // ✅ MÉTHODE SIMPLE : Insérer les transformations juste après /upload/
-      // Format: https://res.cloudinary.com/XXX/image/upload/TRANSFORMATIONS/public_id.ext
-      // On remplace /upload/ par /upload/TRANSFORMATIONS/
-      
-      const transformations = 'f_auto,q_auto:good,w_800,c_limit,fl_progressive';
-      
-      // Pattern 1: /image/upload/v123/ ou /image/upload/
-      if (originalUrl.includes('/image/upload/')) {
-        const optimizedUrl = originalUrl.replace(
-          /(\/image\/upload\/)(?:v\d+\/)?/,
-          `$1${transformations}/`
-        );
-        return optimizedUrl;
-      }
-      
-      // Pattern 2: /upload/v123/ ou /upload/ (ancien format)
-      if (originalUrl.includes('/upload/')) {
-        const optimizedUrl = originalUrl.replace(
-          /(\/upload\/)(?:v\d+\/)?/,
-          `$1${transformations}/`
-        );
-        return optimizedUrl;
-      }
-
-      // Si aucun pattern ne matche, retourner l'URL originale
-      return originalUrl;
-
-    } catch (error) {
-      // ⚠️ FALLBACK CRITIQUE : En cas d'erreur, TOUJOURS retourner l'URL originale
-      console.error(`❌ [getOptimizedCloudinaryUrl] Erreur, utilisation URL originale: ${error.message}`);
-      return originalUrl;
-    }
-  }
-
-  /**
-   * 🔧 Extrait le public_id (pour suppression)
-   */
-  private extractPublicId(url: string): string | null {
-    try {
-      const match = url.match(/\/upload\/(?:[^/]+\/)*?([^/]+\/[^/.]+)/);
-      return match ? match[1] : null;
-    } catch {
-      return null;
-    }
-  }
 }

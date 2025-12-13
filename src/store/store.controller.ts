@@ -28,17 +28,13 @@ import { GetUser } from 'src/common/decorators/get-user.decorator';
 import { CreatePaymentIntentDto } from './dto/create-payment-intent.dto';
 import { ConfirmPurchaseDto } from './dto/confirm-purchase.dto';
 import { TestPurchaseDto } from './dto/test-purchase.dto';
-import { ConfigService } from '@nestjs/config';
 
 @ApiTags('Store')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
 @Controller('store')
 export class StoreController {
-  constructor(
-    private readonly storeService: StoreService,
-    private readonly configService: ConfigService,
-  ) {}
+  constructor(private readonly storeService: StoreService) {}
 
   // CREATE
   @Post()
@@ -53,7 +49,6 @@ export class StoreController {
   @Get()
   @ApiOperation({ summary: 'Tous les articles en vente' })
   async findAll(): Promise<Store[]> {
-    // 🔴 OPTIMISATION DÉSACTIVÉE - Retour des URLs originales
     return this.storeService.findAll();
   }
 
@@ -62,7 +57,6 @@ export class StoreController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Mes articles en vente' })
   async findMyStore(@GetUser() user: any): Promise<Store[]> {
-    // 🔴 OPTIMISATION DÉSACTIVÉE - Retour des URLs originales
     return this.storeService.findByUserId(user.id);
   }
 
@@ -71,7 +65,6 @@ export class StoreController {
   @ApiOperation({ summary: 'Détail d\'un article' })
   @ApiParam({ name: 'id', description: 'ID du Store item' })
   async findOne(@Param('id') id: string): Promise<Store> {
-    // 🔴 OPTIMISATION DÉSACTIVÉE - Retour des URLs originales
     return this.storeService.findOne(id);
   }
 
@@ -164,71 +157,4 @@ async testPurchase(
     message: `Test purchase successful! Seller balance updated with ${body.amount} USD`,
   };
 }*/
-
-  /**
-   * 🔧 Optimise les URLs Cloudinary dans un Store
-   */
-  private optimizeStoreUrls(store: any): Store {
-    const storeObj = JSON.parse(JSON.stringify(store));
-    
-    // Optimiser l'image du vêtement si présent
-    if (storeObj.clothe && storeObj.clothe.imageURL) {
-      storeObj.clothe.imageURL = this.getOptimizedCloudinaryUrl(storeObj.clothe.imageURL);
-    }
-    if (storeObj.clothe && storeObj.clothe.processedImageURL) {
-      storeObj.clothe.processedImageURL = this.getOptimizedCloudinaryUrl(storeObj.clothe.processedImageURL);
-    }
-    
-    return storeObj;
-  }
-
-  /**
-   * 🔧 Optimise une URL Cloudinary pour chargement rapide sur mobile
-   * Méthode SIMPLE : Insère les transformations directement dans l'URL existante
-   * ⚠️ IMPORTANT : Si l'optimisation échoue, retourne l'URL originale pour éviter de casser les images
-   */
-  private getOptimizedCloudinaryUrl(originalUrl: string): string {
-    // Si pas d'URL ou pas Cloudinary, retourner tel quel
-    if (!originalUrl || typeof originalUrl !== 'string' || !originalUrl.includes('cloudinary.com')) {
-      return originalUrl;
-    }
-
-    try {
-      // Si l'URL contient déjà des transformations, ne pas la modifier
-      if (originalUrl.includes('/f_auto') || originalUrl.includes('/q_auto')) {
-        return originalUrl;
-      }
-
-      // ✅ MÉTHODE SIMPLE : Insérer les transformations juste après /upload/
-      // Format: https://res.cloudinary.com/XXX/image/upload/TRANSFORMATIONS/public_id.ext
-      // On remplace /upload/ par /upload/TRANSFORMATIONS/
-      
-      const transformations = 'f_auto,q_auto:good,w_800,c_limit,fl_progressive';
-      
-      // Pattern 1: /image/upload/v123/ ou /image/upload/
-      if (originalUrl.includes('/image/upload/')) {
-        const optimizedUrl = originalUrl.replace(
-          /(\/image\/upload\/)(?:v\d+\/)?/,
-          `$1${transformations}/`
-        );
-        return optimizedUrl;
-      }
-      
-      // Pattern 2: /upload/v123/ ou /upload/ (ancien format)
-      if (originalUrl.includes('/upload/')) {
-        const optimizedUrl = originalUrl.replace(
-          /(\/upload\/)(?:v\d+\/)?/,
-          `$1${transformations}/`
-        );
-        return optimizedUrl;
-      }
-
-      // Si aucun pattern ne matche, retourner l'URL originale
-      return originalUrl;
-
-    } catch (error) {
-      // ⚠️ FALLBACK CRITIQUE : En cas d'erreur, TOUJOURS retourner l'URL originale
-      return originalUrl;
-    }
-  }
 }

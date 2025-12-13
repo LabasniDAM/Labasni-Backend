@@ -175,7 +175,7 @@ export class ClothesService {
           imageURL: clothing.imageURL,
           category: clothing.category,
         },
-        { timeout: 60000 }, // ✨ 60 secondes (augmenté pour Render)
+        { timeout: 30000 }, // 30 secondes max
       );
 
       if (response.data.success && response.data.processedImageURL) {
