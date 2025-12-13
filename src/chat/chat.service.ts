@@ -9,6 +9,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Message, MessageDocument } from './schemas/message.schema';
 import { Conversation, ConversationDocument } from './schemas/conversation.schema';
+import { User, UserDocument } from '../user/schemas/user.schema';
 import { AiAnalysisService } from './ai-analysis.service';
 
 @Injectable()
@@ -18,6 +19,7 @@ export class ChatService {
   constructor(
     @InjectModel(Message.name) private messageModel: Model<MessageDocument>,
     @InjectModel(Conversation.name) private conversationModel: Model<ConversationDocument>,
+    @InjectModel(User.name) private userModel: Model<UserDocument>,
     private aiAnalysisService: AiAnalysisService,
   ) {}
 
@@ -57,13 +59,31 @@ export class ChatService {
   async createMessage(conversationId: string, senderId: string, content: string) {
     this.logger.log('=== CREATE MESSAGE ===');
     this.logger.log('conversationId:', conversationId);
-    this.logger.log('senderId:', senderId);
+    this.logger.log('senderId reçu:', senderId);
+    this.logger.log('senderId type:', typeof senderId);
+    
+    // ✨ AJOUT : Vérifier que senderId est bien une string et pas undefined
+    if (!senderId || senderId === 'undefined') {
+      this.logger.error('❌ ERREUR CRITIQUE : senderId invalide !');
+      throw new BadRequestException('senderId invalide');
+    }
 
     const conversation = await this.conversationModel.findById(conversationId);
     if (!conversation) throw new NotFoundException('Conversation non trouvée');
 
-    const isParticipant = conversation.participants.some((id: any) => id.toString() === senderId);
-    if (!isParticipant) throw new ForbiddenException('Tu ne fais pas partie de cette conversation');
+    // ✨ CRITIQUE : Vérifier que senderId est dans les participants
+    const isParticipant = conversation.participants.some((id: any) => {
+      const participantId = id._id?.toString() || id.toString();
+      const match = participantId === senderId;
+      this.logger.log(`   Participant: ${participantId} === ${senderId} ? ${match}`);
+      return match;
+    });
+    
+    if (!isParticipant) {
+      this.logger.error(`❌ User ${senderId} n'est pas participant !`);
+      this.logger.error(`   Participants: ${conversation.participants.map((p: any) => p._id?.toString() || p.toString()).join(', ')}`);
+      throw new ForbiddenException('Tu ne fais pas partie de cette conversation');
+    }
 
     // ✨ NOUVEAU : Analyser le message avec l'IA pour extraire des informations
     let extractedInfo = {};
@@ -92,14 +112,18 @@ export class ChatService {
       }
     }
 
+    // ✨ CRITIQUE : Créer le message avec le BON senderId
+    this.logger.log(`✅ Création du message avec senderId: '${senderId}'`);
+    
     const message = await this.messageModel.create({
       conversationId: conversation._id, // ← ObjectId direct
-      senderId: new Types.ObjectId(senderId),
+      senderId: new Types.ObjectId(senderId),  // ← IMPORTANT : Utiliser le senderId reçu en paramètre
       content: maskedContent, // ✨ Utiliser le contenu masqué pour l'affichage
       extractedInfo: Object.keys(extractedInfo).length > 0 ? extractedInfo : undefined, // Garder les infos originales pour les actions
     });
 
-    this.logger.log('Message créé avec conversationId:', message.conversationId);
+    this.logger.log('✅ Message créé avec ID:', message._id);
+    this.logger.log('✅ Message senderId final:', message.senderId);
 
     // Mise à jour du lastMessage
     await this.conversationModel.findByIdAndUpdate(conversationId, {
@@ -107,8 +131,46 @@ export class ChatService {
       updatedAt: new Date(),
     });
 
-    // ✨ CORRIGÉ : Inclure explicitement _id dans le populate (nécessaire pour iOS)
-    return await message.populate('senderId', '_id fullName profilePicture');
+    // ✨ Populate et retourner
+    const populatedMessage = await message.populate('senderId', '_id fullName profilePicture');
+    
+    // ✨ VÉRIFICATION FINALE
+    const finalSenderId = (populatedMessage.senderId as any)?._id?.toString() || (populatedMessage.senderId as any)?.toString() || populatedMessage.senderId?.toString();
+    this.logger.log(`🔍 VÉRIFICATION FINALE AVANT POPULATE:`);
+    this.logger.log(`   - senderId reçu en paramètre: '${senderId}'`);
+    this.logger.log(`   - message.senderId (avant populate): '${message.senderId.toString()}'`);
+    this.logger.log(`   - senderId dans le message final (après populate): '${finalSenderId}'`);
+    this.logger.log(`   - populatedMessage.senderId (type): ${typeof populatedMessage.senderId}`);
+    this.logger.log(`   - populatedMessage.senderId (raw): ${JSON.stringify(populatedMessage.senderId)}`);
+    this.logger.log(`   - Match: ${finalSenderId === senderId ? '✅ OUI' : '❌ NON - PROBLÈME !'}`);
+    
+    if (finalSenderId !== senderId) {
+      this.logger.error(`❌ ERREUR CRITIQUE : Le senderId du message ne correspond pas !`);
+      this.logger.error(`   - Attendu: '${senderId}'`);
+      this.logger.error(`   - Reçu: '${finalSenderId}'`);
+      this.logger.error(`   - Cela va causer un problème d'alignement dans le chat !`);
+      
+      // ✨ CORRECTION : Forcer le bon senderId dans le message
+      // Récupérer les infos de l'utilisateur correct depuis la base
+      const correctUser = await this.userModel.findById(senderId).exec();
+      
+      if (correctUser) {
+        const userId = (correctUser._id as Types.ObjectId).toString();
+        this.logger.log(`✅ Utilisateur correct trouvé: ${correctUser.fullName}`);
+        // Remplacer le senderId dans le message avec les bonnes données
+        populatedMessage.senderId = {
+          _id: userId,
+          id: userId,
+          fullName: correctUser.fullName,
+          profilePicture: correctUser.profilePicture,
+        } as any;
+        this.logger.log(`✅ senderId corrigé dans le message`);
+      } else {
+        this.logger.error(`❌ Impossible de trouver l'utilisateur avec l'ID: ${senderId}`);
+      }
+    }
+    
+    return populatedMessage;
   }
 
   // RÉCUPÉRER LES MESSAGES D'UNE CONVERSATION (CORRIGÉ)

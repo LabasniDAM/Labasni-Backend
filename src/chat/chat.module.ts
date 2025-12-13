@@ -7,6 +7,7 @@ import { ChatController } from './chat.controller';
 import { AiAnalysisService } from './ai-analysis.service';
 import { Message, MessageSchema } from './schemas/message.schema';
 import { Conversation, ConversationSchema } from './schemas/conversation.schema';
+import { User, UserSchema } from '../user/schemas/user.schema';
 import { JWT_SECRET, JWT_SIGN_OPTIONS } from '../auth/auth.constants';
 
 @Module({
@@ -14,6 +15,7 @@ import { JWT_SECRET, JWT_SIGN_OPTIONS } from '../auth/auth.constants';
     MongooseModule.forFeature([
       { name: Message.name, schema: MessageSchema },
       { name: Conversation.name, schema: ConversationSchema },
+      { name: User.name, schema: UserSchema },
     ]),
     JwtModule.register({
       secret: JWT_SECRET,
