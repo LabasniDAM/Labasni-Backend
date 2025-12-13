@@ -55,7 +55,46 @@ export class ClothController {
     }
 
     const clothes = await this.clothService.findAllByUser(user.id);
-    return clothes; // Retourne directement le tableau pour compatibilité iOS
+    
+    console.log(`🔄 [getMyClothes] Optimisation de ${clothes.length} vêtements...`);
+    
+    // 🔥 OPTIMISER LES URLs AVANT DE RENVOYER
+    const optimizedClothes = clothes.map((cloth, index) => {
+      const clothObj = JSON.parse(JSON.stringify(cloth)); // Convertir en objet plain
+      
+      const originalImageURL = clothObj.imageURL;
+      const originalProcessedURL = clothObj.processedImageURL;
+      
+      const optimizedImageURL = clothObj.imageURL && clothObj.imageURL.includes('cloudinary.com') 
+        ? this.getOptimizedCloudinaryUrl(clothObj.imageURL)
+        : clothObj.imageURL;
+      
+      const optimizedProcessedURL = clothObj.processedImageURL && clothObj.processedImageURL.includes('cloudinary.com')
+        ? this.getOptimizedCloudinaryUrl(clothObj.processedImageURL)
+        : clothObj.processedImageURL;
+      
+      // Log seulement pour le premier vêtement pour éviter le spam
+      if (index === 0) {
+        console.log(`📊 [getMyClothes] Exemple d'optimisation (vêtement 1/${clothes.length}):`);
+        console.log(`   imageURL originale: ${originalImageURL?.substring(0, 80)}...`);
+        console.log(`   imageURL optimisée: ${optimizedImageURL?.substring(0, 80)}...`);
+        if (optimizedImageURL?.includes('f_auto')) {
+          console.log('   ✅ URL optimisée avec transformations Cloudinary');
+        } else if (optimizedImageURL === originalImageURL) {
+          console.log('   ⚠️ URL retournée telle quelle (fallback ou déjà optimisée)');
+        }
+      }
+      
+      return {
+        ...clothObj,
+        imageURL: optimizedImageURL,
+        processedImageURL: optimizedProcessedURL,
+      };
+    });
+
+    console.log(`✅ [getMyClothes] ${optimizedClothes.length} vêtements optimisés et renvoyés`);
+    
+    return optimizedClothes;
   }
 
   /**
@@ -99,7 +138,6 @@ async getVTOReadyClothes(@GetUser() user: any) {
 
   const clothes = await this.clothService.findReadyForVTO(user.id);
 
-  // ✅ CORRECTION : Retourner directement l'objet groupé sans wrapper
   const grouped = clothes.reduce((acc, cloth) => {
     const category = cloth.category.toLowerCase();
     if (!acc[category]) {
@@ -107,19 +145,23 @@ async getVTOReadyClothes(@GetUser() user: any) {
     }
     acc[category].push({
       id: cloth._id,
-      imageURL: cloth.imageURL,
-      processedImageURL: cloth.processedImageURL,
+      // 🔥 OPTIMISER LES URLs
+      imageURL: cloth.imageURL?.includes('cloudinary.com')
+        ? this.getOptimizedCloudinaryUrl(cloth.imageURL)
+        : cloth.imageURL,
+      processedImageURL: cloth.processedImageURL?.includes('cloudinary.com')
+        ? this.getOptimizedCloudinaryUrl(cloth.processedImageURL)
+        : cloth.processedImageURL,
       category: cloth.category,
       color: cloth.color,
       style: cloth.style,
       season: cloth.season,
-      processingStatus: cloth.processingStatus,  // ✅ Ajouté
-      isProcessed: cloth.isProcessed,            // ✅ Ajouté
+      processingStatus: cloth.processingStatus,
+      isProcessed: cloth.isProcessed,
     });
     return acc;
   }, {});
 
-  // ✅ Pas de wrapper { success, data, etc. }
   return grouped;
 }
 
@@ -204,6 +246,18 @@ async getVTOReadyClothes(@GetUser() user: any) {
   @ApiOperation({ summary: 'Statistiques globales des corrections' })
   async getGlobalStats() {
     return await this.clothService.getGlobalCorrectionStats(); // Retourne directement l'objet stats
+  }
+
+  @Get('cache-stats')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Statistiques cache Cloudinary' })
+  async getCacheStats() {
+    return {
+      cloudinaryOptimizationsEnabled: !!process.env.CLOUDINARY_CLOUD_NAME,
+      cloudName: process.env.CLOUDINARY_CLOUD_NAME || 'NOT_SET',
+      transformations: 'f_auto,q_auto:good,w_800,c_limit,fl_progressive',
+      expectedReduction: '80-90%',
+    };
   }
 
   @Get('stats/me')
@@ -349,4 +403,90 @@ async getVTOProcessingStatus(@GetUser() user: any) {
   
   return stats;
 }
+
+  /**
+   * 🔧 Optimise une URL Cloudinary pour chargement rapide sur mobile
+   * ⚠️ IMPORTANT : Si l'optimisation échoue, retourne l'URL originale pour éviter de casser les images
+   */
+  private getOptimizedCloudinaryUrl(originalUrl: string): string {
+    // Si pas d'URL ou pas Cloudinary, retourner tel quel
+    if (!originalUrl || typeof originalUrl !== 'string' || !originalUrl.includes('cloudinary.com')) {
+      return originalUrl;
+    }
+
+    try {
+      // Si l'URL contient déjà des transformations, ne pas la modifier
+      if (originalUrl.includes('/f_auto') || originalUrl.includes('/q_auto')) {
+        console.log('✅ [getOptimizedCloudinaryUrl] URL déjà optimisée, retournée telle quelle');
+        return originalUrl;
+      }
+
+      // Extraire le cloud_name depuis l'URL originale
+      const cloudNameMatch = originalUrl.match(/res\.cloudinary\.com\/([^\/]+)\//);
+      const cloudName = cloudNameMatch ? cloudNameMatch[1] : process.env.CLOUDINARY_CLOUD_NAME;
+
+      if (!cloudName) {
+        // ⚠️ FALLBACK : Si pas de cloud_name, retourner l'URL originale
+        console.warn('⚠️ [getOptimizedCloudinaryUrl] FALLBACK: CLOUDINARY_CLOUD_NAME non défini, utilisation URL originale');
+        return originalUrl;
+      }
+
+      // Extraire le public_id - format Cloudinary standard
+      // Exemples d'URLs :
+      // https://res.cloudinary.com/XXX/image/upload/v123/labasni/clothes/shirt.jpg
+      // https://res.cloudinary.com/XXX/image/upload/labasni/clothes/shirt.jpg
+      // https://res.cloudinary.com/XXX/image/upload/labasni/clothes/shirt
+      
+      let publicId: string | null = null;
+      
+      // Pattern 1: /image/upload/v123/public_id.ext ou /image/upload/public_id.ext
+      const imageUploadMatch = originalUrl.match(/\/image\/upload\/(?:v\d+\/)?([^?]+)/);
+      if (imageUploadMatch) {
+        publicId = imageUploadMatch[1];
+      } else {
+        // Pattern 2: /upload/v123/public_id.ext ou /upload/public_id.ext (ancien format)
+        const uploadMatch = originalUrl.match(/\/upload\/(?:v\d+\/)?([^?]+)/);
+        if (uploadMatch) {
+          publicId = uploadMatch[1];
+        }
+      }
+
+      if (!publicId) {
+        // ⚠️ FALLBACK : Si on ne peut pas extraire le public_id, retourner l'URL originale
+        console.warn('⚠️ [getOptimizedCloudinaryUrl] FALLBACK: Impossible d\'extraire le public_id, utilisation URL originale:', originalUrl.substring(0, 80));
+        return originalUrl;
+      }
+
+      // Nettoyer le public_id (enlever l'extension si présente et les query params)
+      publicId = publicId.split('?')[0]; // Enlever les query params
+      publicId = publicId.replace(/\.(jpg|jpeg|png|webp|gif)$/i, ''); // Enlever l'extension
+
+      // Construire l'URL optimisée
+      const optimizedUrl = `https://res.cloudinary.com/${cloudName}/image/upload/f_auto,q_auto:good,w_800,c_limit,fl_progressive/${publicId}`;
+      
+      console.log('✅ [getOptimizedCloudinaryUrl] URL optimisée avec succès');
+      console.log(`   Originale: ${originalUrl.substring(0, 100)}...`);
+      console.log(`   Optimisée: ${optimizedUrl.substring(0, 100)}...`);
+      
+      return optimizedUrl;
+
+    } catch (error) {
+      // ⚠️ FALLBACK CRITIQUE : En cas d'erreur, TOUJOURS retourner l'URL originale
+      console.error(`❌ [getOptimizedCloudinaryUrl] FALLBACK: Erreur optimisation URL: ${error.message}`);
+      console.error(`   URL originale: ${originalUrl?.substring(0, 100)}`);
+      return originalUrl;
+    }
+  }
+
+  /**
+   * 🔧 Extrait le public_id (pour suppression)
+   */
+  private extractPublicId(url: string): string | null {
+    try {
+      const match = url.match(/\/upload\/(?:[^/]+\/)*?([^/]+\/[^/.]+)/);
+      return match ? match[1] : null;
+    } catch {
+      return null;
+    }
+  }
 }

@@ -28,13 +28,17 @@ import { GetUser } from 'src/common/decorators/get-user.decorator';
 import { CreatePaymentIntentDto } from './dto/create-payment-intent.dto';
 import { ConfirmPurchaseDto } from './dto/confirm-purchase.dto';
 import { TestPurchaseDto } from './dto/test-purchase.dto';
+import { ConfigService } from '@nestjs/config';
 
 @ApiTags('Store')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
 @Controller('store')
 export class StoreController {
-  constructor(private readonly storeService: StoreService) {}
+  constructor(
+    private readonly storeService: StoreService,
+    private readonly configService: ConfigService,
+  ) {}
 
   // CREATE
   @Post()
@@ -49,7 +53,8 @@ export class StoreController {
   @Get()
   @ApiOperation({ summary: 'Tous les articles en vente' })
   async findAll(): Promise<Store[]> {
-    return this.storeService.findAll();
+    const stores = await this.storeService.findAll();
+    return stores.map(store => this.optimizeStoreUrls(store));
   }
 
   // GET MY STORE ITEMS
@@ -57,7 +62,8 @@ export class StoreController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Mes articles en vente' })
   async findMyStore(@GetUser() user: any): Promise<Store[]> {
-    return this.storeService.findByUserId(user.id);
+    const stores = await this.storeService.findByUserId(user.id);
+    return stores.map(store => this.optimizeStoreUrls(store));
   }
 
   // GET ONE
@@ -65,7 +71,8 @@ export class StoreController {
   @ApiOperation({ summary: 'Détail d\'un article' })
   @ApiParam({ name: 'id', description: 'ID du Store item' })
   async findOne(@Param('id') id: string): Promise<Store> {
-    return this.storeService.findOne(id);
+    const store = await this.storeService.findOne(id);
+    return this.optimizeStoreUrls(store);
   }
 
   // UPDATE
@@ -157,4 +164,81 @@ async testPurchase(
     message: `Test purchase successful! Seller balance updated with ${body.amount} USD`,
   };
 }*/
+
+  /**
+   * 🔧 Optimise les URLs Cloudinary dans un Store
+   */
+  private optimizeStoreUrls(store: any): Store {
+    const storeObj = JSON.parse(JSON.stringify(store));
+    
+    // Optimiser l'image du vêtement si présent
+    if (storeObj.clothe && storeObj.clothe.imageURL) {
+      storeObj.clothe.imageURL = this.getOptimizedCloudinaryUrl(storeObj.clothe.imageURL);
+    }
+    if (storeObj.clothe && storeObj.clothe.processedImageURL) {
+      storeObj.clothe.processedImageURL = this.getOptimizedCloudinaryUrl(storeObj.clothe.processedImageURL);
+    }
+    
+    return storeObj;
+  }
+
+  /**
+   * 🔧 Optimise une URL Cloudinary pour chargement rapide sur mobile
+   * ⚠️ IMPORTANT : Si l'optimisation échoue, retourne l'URL originale pour éviter de casser les images
+   */
+  private getOptimizedCloudinaryUrl(originalUrl: string): string {
+    // Si pas d'URL ou pas Cloudinary, retourner tel quel
+    if (!originalUrl || typeof originalUrl !== 'string' || !originalUrl.includes('cloudinary.com')) {
+      return originalUrl;
+    }
+
+    try {
+      // Si l'URL contient déjà des transformations, ne pas la modifier
+      if (originalUrl.includes('/f_auto') || originalUrl.includes('/q_auto')) {
+        return originalUrl;
+      }
+
+      // Extraire le cloud_name depuis l'URL originale
+      const cloudNameMatch = originalUrl.match(/res\.cloudinary\.com\/([^\/]+)\//);
+      const cloudName = cloudNameMatch ? cloudNameMatch[1] : this.configService.get<string>('CLOUDINARY_CLOUD_NAME');
+
+      if (!cloudName) {
+        // ⚠️ FALLBACK : Si pas de cloud_name, retourner l'URL originale
+        return originalUrl;
+      }
+
+      // Extraire le public_id - format Cloudinary standard
+      let publicId: string | null = null;
+      
+      // Pattern 1: /image/upload/v123/public_id.ext ou /image/upload/public_id.ext
+      const imageUploadMatch = originalUrl.match(/\/image\/upload\/(?:v\d+\/)?([^?]+)/);
+      if (imageUploadMatch) {
+        publicId = imageUploadMatch[1];
+      } else {
+        // Pattern 2: /upload/v123/public_id.ext ou /upload/public_id.ext (ancien format)
+        const uploadMatch = originalUrl.match(/\/upload\/(?:v\d+\/)?([^?]+)/);
+        if (uploadMatch) {
+          publicId = uploadMatch[1];
+        }
+      }
+
+      if (!publicId) {
+        // ⚠️ FALLBACK : Si on ne peut pas extraire le public_id, retourner l'URL originale
+        return originalUrl;
+      }
+
+      // Nettoyer le public_id (enlever l'extension si présente et les query params)
+      publicId = publicId.split('?')[0]; // Enlever les query params
+      publicId = publicId.replace(/\.(jpg|jpeg|png|webp|gif)$/i, ''); // Enlever l'extension
+
+      // Construire l'URL optimisée
+      const optimizedUrl = `https://res.cloudinary.com/${cloudName}/image/upload/f_auto,q_auto:good,w_800,c_limit,fl_progressive/${publicId}`;
+      
+      return optimizedUrl;
+
+    } catch (error) {
+      // ⚠️ FALLBACK CRITIQUE : En cas d'erreur, TOUJOURS retourner l'URL originale
+      return originalUrl;
+    }
+  }
 }

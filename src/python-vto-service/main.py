@@ -102,9 +102,20 @@ def get_cache_path(cache_key: str, processed: bool = False) -> str:
 # TÉLÉCHARGEMENT D'IMAGES (SANS REMBG)
 # ==========================================
 def download_image_from_url(url: str) -> Image.Image:
-    """Télécharge une image depuis une URL"""
+    """Télécharge une image depuis une URL avec optimisations Cloudinary"""
     try:
-        response = requests.get(url, timeout=10)
+        # 🚀 Si c'est une URL Cloudinary, ajouter des transformations pour réduire la taille
+        if 'cloudinary.com' in url and '/upload/' in url:
+            # Vérifier si des transformations sont déjà présentes
+            if 'f_auto' not in url:
+                # Ajouter les transformations pour optimiser le téléchargement
+                # Utiliser w_1200 pour le traitement (plus grand que l'affichage mobile)
+                if '?' not in url:
+                    url = f"{url}?f_auto,q_auto:good,w_1200"
+                elif 'f_auto' not in url:
+                    url = f"{url}&f_auto,q_auto:good,w_1200"
+        
+        response = requests.get(url, timeout=30)  # ✨ Augmenter timeout pour Render
         response.raise_for_status()
         return Image.open(BytesIO(response.content))
     except Exception as e:
