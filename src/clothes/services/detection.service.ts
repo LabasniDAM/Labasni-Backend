@@ -4,7 +4,6 @@ import { ConfigService } from '@nestjs/config';
 import FormData from 'form-data';
 import axios from 'axios';
 
-// ✅ EXPORTÉ pour résoudre TS4053
 export interface DetectionResult {
   type: string;
   color: string;
@@ -12,64 +11,78 @@ export interface DetectionResult {
   season: string;
 }
 
+export interface ConfidenceScores {
+  detection: number;
+  style: number;
+  season: number;
+}
+
 @Injectable()
 export class DetectionService {
   private readonly logger = new Logger(DetectionService.name);
-  private readonly hfApiUrl: string; // ✅ Type string (non undefined)
+  private readonly hfApiUrl: string;
 
   constructor(private configService: ConfigService) {
-    // ✅ Valeur par défaut si variable manquante
     this.hfApiUrl = this.configService.get<string>('HUGGINGFACE_API_URL') || '';
     
     if (!this.hfApiUrl) {
-      this.logger.warn('⚠️ HUGGINGFACE_API_URL non configurée - Détection désactivée');
+      this.logger.error('❌ HUGGINGFACE_API_URL non configurée dans .env');
+      throw new Error('Configuration manquante: HUGGINGFACE_API_URL');
     } else {
       this.logger.log(`✅ Detection Service initialisé: ${this.hfApiUrl}`);
     }
   }
 
+  /**
+   * Détecte un vêtement via l'API Hugging Face
+   */
   async detectCloth(
     photoBuffer: Buffer,
     filename: string,
-  ): Promise<DetectionResult> {
-    if (!this.hfApiUrl) {
-      throw new HttpException(
-        'Service de détection non configuré',
-        HttpStatus.SERVICE_UNAVAILABLE,
-      );
-    }
-
+  ): Promise<{
+    detection: DetectionResult;
+    confidence: ConfidenceScores;
+  }> {
     try {
-      this.logger.log('🔍 Appel API Hugging Face pour détection...');
+      this.logger.log(`🔍 Détection de: ${filename} (${photoBuffer.length} bytes)`);
 
+      // Créer le FormData
       const formData = new FormData();
-      formData.append('photo', photoBuffer, {
+      formData.append('file', photoBuffer, {
         filename: filename,
         contentType: 'image/jpeg',
       });
 
       const startTime = Date.now();
 
-      const response = await axios.post(`${this.hfApiUrl}/detect`, formData, {
-        headers: {
-          ...formData.getHeaders(),
-        },
-        timeout: 90000,
-        maxContentLength: Infinity,
-        maxBodyLength: Infinity,
-      });
+      // Appel à l'API Hugging Face
+      const response = await axios.post(
+        `${this.hfApiUrl}/detect`,
+        formData,
+        {
+          headers: {
+            ...formData.getHeaders(),
+          },
+          timeout: 60000, // 60 secondes
+          maxContentLength: Infinity,
+          maxBodyLength: Infinity,
+        }
+      );
 
       const duration = Date.now() - startTime;
       this.logger.log(`✅ Détection réussie en ${duration}ms`);
 
-      if (!response.data.success) {
+      // Validation de la réponse
+      if (!response.data || !response.data.success) {
         throw new HttpException(
-          response.data.error || 'Détection échouée',
+          response.data?.message || 'Aucun vêtement détecté',
           HttpStatus.BAD_REQUEST,
         );
       }
 
-      const detection = response.data.detection;
+      const { detection, confidence } = response.data;
+
+      // Validation des données
       if (!detection || !detection.type || !detection.color) {
         throw new HttpException(
           'Réponse de détection invalide',
@@ -77,50 +90,82 @@ export class DetectionService {
         );
       }
 
-      this.logger.log(`📊 Détection: ${detection.type}, ${detection.color}, ${detection.style}, ${detection.season}`);
+      this.logger.log(
+        `📊 Résultat: ${detection.type} | ${detection.color} | ${detection.style} | ${detection.season}`
+      );
+      this.logger.log(
+        `📈 Confiance: Detection=${confidence.detection}, Style=${confidence.style}, Season=${confidence.season}`
+      );
 
       return {
-        type: detection.type,
-        color: detection.color,
-        style: detection.style || 'casual',
-        season: detection.season || 'spring',
+        detection: {
+          type: detection.type,
+          color: detection.color,
+          style: detection.style || 'casual',
+          season: detection.season || 'all',
+        },
+        confidence: {
+          detection: confidence.detection || 0,
+          style: confidence.style || 0,
+          season: confidence.season || 0,
+        },
       };
 
     } catch (error: any) {
-      this.logger.error(`❌ Erreur détection HF: ${error.message}`);
+      this.logger.error(`❌ Erreur détection: ${error.message}`);
 
       if (error.response) {
         this.logger.error(`Status: ${error.response.status}`);
-        this.logger.error(`Data:`, error.response.data);
+        this.logger.error(`Data:`, JSON.stringify(error.response.data));
       }
 
       if (error.code === 'ECONNABORTED') {
         throw new HttpException(
-          'Délai d\'attente de détection dépassé',
+          'Délai d\'attente dépassé (>60s)',
           HttpStatus.REQUEST_TIMEOUT,
         );
       }
 
+      if (error.code === 'ECONNREFUSED') {
+        throw new HttpException(
+          'API Hugging Face inaccessible',
+          HttpStatus.SERVICE_UNAVAILABLE,
+        );
+      }
+
       throw new HttpException(
-        'Erreur lors de la détection du vêtement',
+        `Erreur de détection: ${error.message}`,
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }
 
-  async healthCheck(): Promise<boolean> {
-    if (!this.hfApiUrl) {
-      return false;
-    }
-
+  /**
+   * Vérifie l'état de santé de l'API Hugging Face
+   */
+  async healthCheck(): Promise<{
+    status: string;
+    api: string;
+    reachable: boolean;
+  }> {
     try {
-      const response = await axios.get(`${this.hfApiUrl}/`, {
+      const response = await axios.get(`${this.hfApiUrl}/health`, {
         timeout: 5000,
       });
-      return response.status === 200;
-    } catch (error) {
-      this.logger.error('❌ Health check failed:', error.message);
-      return false;
+
+      return {
+        status: response.data.status || 'unknown',
+        api: this.hfApiUrl,
+        reachable: true,
+      };
+    } catch (error: any) {
+      this.logger.error(`❌ Health check échoué: ${error.message}`);
+      
+      return {
+        status: 'unreachable',
+        api: this.hfApiUrl,
+        reachable: false,
+      };
     }
   }
 }

@@ -1,40 +1,91 @@
-// src/clothes/detect.controller.ts
+// src/clothes/detect.controller.ts - VERSION CORRIGÉE (sans sauvegarde BD)
 import {
   Controller,
   Post,
+  Get,
   UploadedFile,
   UseInterceptors,
   BadRequestException,
   UseGuards,
   Logger,
+  HttpStatus,
+  HttpException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiTags, ApiOperation, ApiConsumes, ApiBody, ApiBearerAuth } from '@nestjs/swagger';
 import { v2 as cloudinary } from 'cloudinary';
-import { DetectionService, DetectionResult } from './services/detection.service';
+import { DetectionService } from './services/detection.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { GetUser } from '../common/decorators/get-user.decorator';
-import { ClothesService } from './clothes.service';
-import { Clothes } from './schemas/clothes.schema'; // ✅ Import Clothes (pas ClothesDocument)
 
-@Controller('detect')
+@ApiTags('Detection')
+@ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
+@Controller('detect')
 export class DetectController {
   private readonly logger = new Logger(DetectController.name);
 
   constructor(
     private readonly detectionService: DetectionService,
-    private readonly clothesService: ClothesService,
   ) {}
 
+  /**
+   * Health check du service de détection
+   */
+  @Get('health')
+  @ApiOperation({ summary: 'Vérifier l\'état du service de détection' })
+  async healthCheck() {
+    try {
+      const health = await this.detectionService.healthCheck();
+      return health;
+    } catch (error: any) {
+      throw new HttpException(
+        `Service indisponible: ${error.message}`,
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
+  }
+
+  /**
+   * POST /detect
+   * Détecte un vêtement et upload sur Cloudinary
+   * ✅ NE SAUVEGARDE PLUS EN BD (sauvegarde uniquement via POST /clothes)
+   * 
+   * Retourne :
+   * {
+   *   "detection": { type, color, style, season },
+   *   "confidence": { detection, style, season },
+   *   "image_url": "https://cloudinary.com/..."
+   * }
+   */
   @Post()
+  @ApiOperation({ 
+    summary: 'Détecter un vêtement depuis une photo',
+    description: 'Upload une photo, détecte le vêtement via IA, et upload sur Cloudinary. Ne sauvegarde PAS en BD.'
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        photo: {
+          type: 'string',
+          format: 'binary',
+        },
+      },
+    },
+  })
   @UseInterceptors(
     FileInterceptor('photo', {
       limits: {
-        fileSize: 10 * 1024 * 1024,
+        fileSize: 10 * 1024 * 1024, // 10 MB max
       },
       fileFilter: (req, file, cb) => {
-        if (!file.mimetype.match(/\/(jpg|jpeg|png|gif)$/)) {
-          return cb(new BadRequestException('Seules les images sont acceptées'), false);
+        if (!file.mimetype.match(/\/(jpg|jpeg|png|webp|gif)$/)) {
+          return cb(
+            new BadRequestException('Seules les images (JPEG, PNG, WebP) sont acceptées'),
+            false,
+          );
         }
         cb(null, true);
       },
@@ -43,43 +94,53 @@ export class DetectController {
   async detect(
     @UploadedFile() file: Express.Multer.File,
     @GetUser() user: any,
-  ): Promise<{
-    success: boolean;
-    message: string;
-    cloth: any;
-    image_url: string;
-    public_id: string;
-    detection: DetectionResult;
-  }> {
+  ) {
+    // Validation
     if (!file) {
-      throw new BadRequestException('Photo requise');
+      throw new BadRequestException('Aucune photo fournie');
     }
 
     if (!user?.id) {
       throw new BadRequestException('Utilisateur non authentifié');
     }
 
-    this.logger.log(`📸 Nouvelle détection pour user ${user.id}`);
+    this.logger.log(`📸 Détection pour user ${user.id} | Fichier: ${file.originalname}`);
 
     try {
-      // ÉTAPE 1 : Détection via Hugging Face
-      this.logger.log('🤖 Appel Hugging Face...');
-      const detection = await this.detectionService.detectCloth(
+      // ====================================
+      // ÉTAPE 1 : DÉTECTION VIA HUGGING FACE
+      // ====================================
+      this.logger.log('🤖 [1/2] Appel Hugging Face...');
+      
+      const { detection, confidence } = await this.detectionService.detectCloth(
         file.buffer,
         file.originalname,
       );
 
-      // ÉTAPE 2 : Upload sur Cloudinary
-      this.logger.log('☁️ Upload Cloudinary...');
+      this.logger.log(
+        `✅ Détection OK: ${detection.type} (confiance: ${(confidence.detection * 100).toFixed(1)}%)`
+      );
+
+      // ====================================
+      // ÉTAPE 2 : UPLOAD SUR CLOUDINARY
+      // ====================================
+      this.logger.log('☁️  [2/2] Upload Cloudinary...');
+      
       const uploadResult = await new Promise<any>((resolve, reject) => {
         const uploadStream = cloudinary.uploader.upload_stream(
           {
             folder: 'labasni/clothes',
-            format: 'png',
+            format: 'jpg',
             resource_type: 'image',
+            transformation: [
+              { width: 1024, height: 1024, crop: 'limit' },
+            ],
           },
           (error, result) => {
-            if (error) return reject(error);
+            if (error) {
+              this.logger.error('❌ Erreur Cloudinary:', error);
+              return reject(error);
+            }
             resolve(result);
           },
         );
@@ -89,51 +150,53 @@ export class DetectController {
         stream.pipe(uploadStream);
       });
 
-      this.logger.log(`✅ Upload terminé: ${uploadResult.secure_url}`);
+      this.logger.log(`✅ Upload OK: ${uploadResult.secure_url}`);
 
-      // ÉTAPE 3 : Sauvegarder dans la base de données
-      this.logger.log('💾 Sauvegarde en base de données...');
-      const cloth: Clothes = await this.clothesService.create({ // ✅ Type Clothes (pas ClothesDocument)
-        userId: user.id,
-        imageURL: uploadResult.secure_url,
-        category: detection.type,
-        color: detection.color,
-        style: detection.style,
-        season: detection.season,
-        processingStatus: 'pending',
-      });
-
-      // ✅ Conversion sécurisée de _id en string
-      const clothId = (cloth as any)._id ? String((cloth as any)._id) : 'unknown';
-      this.logger.log(`✅ Vêtement créé: ${clothId}`);
-
-      // RETOUR
+      // ====================================
+      // RETOUR POUR iOS (sans sauvegarde BD)
+      // ====================================
       return {
-        success: true,
-        message: 'Vêtement détecté et sauvegardé avec succès',
-        cloth: {
-          id: clothId, // ✅ Utilisation de la variable convertie
-          imageURL: cloth.imageURL,
-          category: cloth.category,
-          color: cloth.color,
-          style: cloth.style,
-          season: cloth.season,
-          processingStatus: cloth.processingStatus,
+        detection: {
+          type: detection.type,
+          color: detection.color,
+          style: detection.style,
+          season: detection.season,
+        },
+        confidence: {
+          detection: Math.round(confidence.detection * 100) / 100,
+          style: Math.round(confidence.style * 100) / 100,
+          season: Math.round(confidence.season * 100) / 100,
         },
         image_url: uploadResult.secure_url,
-        public_id: uploadResult.public_id,
-        detection: detection,
+        cloudinary: {
+          public_id: uploadResult.public_id,
+        },
       };
 
     } catch (error: any) {
       this.logger.error('❌ Erreur complète:', error.message);
       
       if (error.response) {
-        this.logger.error('Réponse API:', error.response.data);
+        this.logger.error('Détails API:', error.response.data);
+      }
+
+      // Gestion des erreurs spécifiques
+      if (error.status === HttpStatus.REQUEST_TIMEOUT) {
+        throw new HttpException(
+          'La détection a pris trop de temps. Veuillez réessayer.',
+          HttpStatus.REQUEST_TIMEOUT,
+        );
+      }
+
+      if (error.status === HttpStatus.SERVICE_UNAVAILABLE) {
+        throw new HttpException(
+          'Le service de détection est temporairement indisponible.',
+          HttpStatus.SERVICE_UNAVAILABLE,
+        );
       }
 
       throw new BadRequestException(
-        error.message || 'Erreur lors de la détection',
+        error.message || 'Erreur lors de la détection du vêtement',
       );
     }
   }
