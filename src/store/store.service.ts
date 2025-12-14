@@ -74,6 +74,7 @@ export class StoreService {
     const storeItem = new this.storeModel({
       ...dto,
       userId: new Types.ObjectId(userId),
+      condition: dto.condition || 'new', // Valeur par défaut si non fourni
     });
 
     const saved = await storeItem.save();

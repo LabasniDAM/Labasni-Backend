@@ -35,6 +35,14 @@ export class Store {
     required: false 
   })
   paymentMethod?: 'stripe' | 'balance';
+
+  @Prop({ 
+    type: String, 
+    enum: ['new', 'used', 'damaged'], 
+    default: 'new',
+    required: true 
+  })
+  condition: 'new' | 'used' | 'damaged';
 }
 
 export const StoreSchema = SchemaFactory.createForClass(Store);

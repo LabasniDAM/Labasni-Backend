@@ -16,4 +16,8 @@ export class CreateStoreDto {
   @IsOptional()
   @IsEnum(['available', 'sold'])
   status?: 'available' | 'sold';
+
+  @IsEnum(['new', 'used', 'damaged'])
+  @IsOptional()
+  condition?: 'new' | 'used' | 'damaged';
 }
